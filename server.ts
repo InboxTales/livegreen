@@ -326,6 +326,14 @@ async function initDB() {
     }
   }
 
+  // Ensure video_testimonials table has created_at column
+  const [videoColumnRows]: any = await pool.query("SELECT column_name FROM information_schema.columns WHERE table_name = 'video_testimonials'");
+  const videoColumnNames = videoColumnRows.map((c: any) => c.column_name.toLowerCase());
+  if (!videoColumnNames.includes('created_at')) {
+    await pool.query("ALTER TABLE video_testimonials ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP");
+  }
+
+
   // Seed default settings 
   const defaultSettings = [
     ['razorpay_key', process.env.RAZORPAY_KEY || ''],

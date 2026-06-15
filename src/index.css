@@ -675,3 +675,8 @@ img {
 .text-glow-honey {
   text-shadow: 0 0 20px rgba(212, 175, 55, 0.4), 0 0 40px rgba(212, 175, 55, 0.2);
 }
+
+/* Ensure all inputs, textareas, and selects have dark, readable text */
+input, textarea, select {
+  color: #051C06 !important;
+}
