@@ -265,6 +265,17 @@ async function initDB() {
       video_url TEXT,
       status VARCHAR(50) DEFAULT 'active',
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )`,
+    `CREATE TABLE IF NOT EXISTS google_reviews (
+      id SERIAL PRIMARY KEY,
+      reviewerName VARCHAR(255) NOT NULL,
+      rating INT NOT NULL,
+      reviewText TEXT,
+      reviewDate VARCHAR(100),
+      profilePhoto TEXT,
+      isVisible INTEGER DEFAULT 1,
+      product_id INTEGER,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )`
   ];
 
@@ -814,7 +825,7 @@ async function startServer() {
   // Helper for Supabase Storage uploads
   async function uploadToSupabase(fileBuffer: Buffer, fileName: string, mimeType: string): Promise<string | null> {
     const supabaseUrl = process.env.SUPABASE_URL;
-    const supabaseKey = process.env.SUPABASE_ANON_KEY;
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;
     if (!supabaseUrl || !supabaseKey) return null;
 
     try {

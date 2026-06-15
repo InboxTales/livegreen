@@ -97,7 +97,14 @@ export const db = {
             'nextbillingdate': 'nextBillingDate',
             
             // orders table
-            'promocodeid': 'promoCodeId'
+            'promocodeid': 'promoCodeId',
+
+            // google_reviews table
+            'reviewername': 'reviewerName',
+            'reviewtext': 'reviewText',
+            'reviewdate': 'reviewDate',
+            'profilephoto': 'profilePhoto',
+            'isvisible': 'isVisible'
           };
           if (mappings[key]) newKey = mappings[key];
           newRow[newKey] = val;
@@ -175,7 +182,12 @@ export const db = {
               rewardcode: 'rewardCode',
               orderid: 'orderId',
               nextbillingdate: 'nextBillingDate',
-              promocodeid: 'promoCodeId'
+              promocodeid: 'promoCodeId',
+              reviewername: 'reviewerName',
+              reviewtext: 'reviewText',
+              reviewdate: 'reviewDate',
+              profilephoto: 'profilePhoto',
+              isvisible: 'isVisible'
             };
             newRow[mappings[key] ?? key] = val;
           }
