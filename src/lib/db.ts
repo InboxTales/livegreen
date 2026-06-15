@@ -74,7 +74,30 @@ export const db = {
             'seodescription': 'seoDescription',
             'seokeywords': 'seoKeywords',
             'key_name': 'key_name',
-            'key_value': 'key_value'
+            'key_value': 'key_value',
+            
+            // customers table
+            'totalspent': 'totalSpent',
+            'orderscount': 'ordersCount',
+            'joindate': 'joinDate',
+            
+            // promo_codes table
+            'discounttype': 'discountType',
+            'discountvalue': 'discountValue',
+            'minspend': 'minSpend',
+            'expirydate': 'expiryDate',
+            
+            // referrals table
+            'referreremail': 'referrerEmail',
+            'referredemail': 'referredEmail',
+            'rewardcode': 'rewardCode',
+            
+            // subscriptions table
+            'orderid': 'orderId',
+            'nextbillingdate': 'nextBillingDate',
+            
+            // orders table
+            'promocodeid': 'promoCodeId'
           };
           if (mappings[key]) newKey = mappings[key];
           newRow[newKey] = val;
@@ -129,11 +152,30 @@ export const db = {
               val = Number(val);
             }
             const mappings: any = {
-              passwordhash: 'passwordHash', customername: 'customerName',
-              totalamount: 'totalAmount', paymentmethod: 'paymentMethod',
-              paymentid: 'paymentId', originalprice: 'originalPrice',
-              seotitle: 'seoTitle', seodescription: 'seoDescription',
-              seokeywords: 'seoKeywords', key_name: 'key_name', key_value: 'key_value',
+              passwordhash: 'passwordHash',
+              customername: 'customerName',
+              totalamount: 'totalAmount',
+              paymentmethod: 'paymentMethod',
+              paymentid: 'paymentId',
+              originalprice: 'originalPrice',
+              seotitle: 'seoTitle',
+              seodescription: 'seoDescription',
+              seokeywords: 'seoKeywords',
+              key_name: 'key_name',
+              key_value: 'key_value',
+              totalspent: 'totalSpent',
+              orderscount: 'ordersCount',
+              joindate: 'joinDate',
+              discounttype: 'discountType',
+              discountvalue: 'discountValue',
+              minspend: 'minSpend',
+              expirydate: 'expiryDate',
+              referreremail: 'referrerEmail',
+              referredemail: 'referredEmail',
+              rewardcode: 'rewardCode',
+              orderid: 'orderId',
+              nextbillingdate: 'nextBillingDate',
+              promocodeid: 'promoCodeId'
             };
             newRow[mappings[key] ?? key] = val;
           }

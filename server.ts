@@ -47,6 +47,7 @@ const storage = multer.diskStorage({
   }
 });
 const upload = multer({ storage });
+const memoryUpload = multer({ storage: multer.memoryStorage() });
 
 app.use(express.json());
 
@@ -756,10 +757,63 @@ async function startServer() {
     res.json(rows);
   });
 
+  // Helper for Supabase Storage uploads
+  async function uploadToSupabase(fileBuffer: Buffer, fileName: string, mimeType: string): Promise<string | null> {
+    const supabaseUrl = process.env.SUPABASE_URL;
+    const supabaseKey = process.env.SUPABASE_ANON_KEY;
+    if (!supabaseUrl || !supabaseKey) return null;
+
+    try {
+      const bucket = 'uploads';
+      const uploadUrl = `${supabaseUrl}/storage/v1/object/${bucket}/${fileName}`;
+      const response = await fetch(uploadUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${supabaseKey}`,
+          'apikey': supabaseKey,
+          'Content-Type': mimeType,
+        },
+        body: fileBuffer as any
+      });
+
+      if (response.ok) {
+        return `${supabaseUrl}/storage/v1/object/public/${bucket}/${fileName}`;
+      } else {
+        const errText = await response.text();
+        console.error('[Supabase Upload Error]:', errText);
+        return null;
+      }
+    } catch (err: any) {
+      console.error('[Supabase Upload Exception]:', err.message);
+      return null;
+    }
+  }
+
   // Image Upload
-  app.post("/api/upload", verifyAdmin, upload.single('image'), (req: any, res) => {
+  app.post("/api/upload", verifyAdmin, memoryUpload.single('image'), async (req: any, res) => {
     if (!req.file) return res.status(400).json({ error: "No file uploaded" });
-    res.json({ success: true, url: `/uploads/${req.file.filename}`, filename: req.file.filename });
+
+    const fileName = `${Date.now()}-${Math.round(Math.random() * 1e9)}${path.extname(req.file.originalname)}`;
+    
+    // 1. Try to upload to Supabase Storage if configured
+    if (process.env.SUPABASE_URL && process.env.SUPABASE_ANON_KEY) {
+      const publicUrl = await uploadToSupabase(req.file.buffer, fileName, req.file.mimetype);
+      if (publicUrl) {
+        return res.json({ success: true, url: publicUrl, filename: fileName });
+      }
+    }
+
+    // 2. Fallback to local storage (for local dev)
+    try {
+      const dir = './public/uploads';
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      const filePath = path.join(dir, fileName);
+      fs.writeFileSync(filePath, req.file.buffer);
+      res.json({ success: true, url: `/uploads/${fileName}`, filename: fileName });
+    } catch (err: any) {
+      console.error("Local upload fallback failed:", err.message);
+      res.status(500).json({ error: "Failed to upload image", details: err.message });
+    }
   });
 
   // Promo Codes
