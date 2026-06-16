@@ -619,7 +619,7 @@ export default function ProductDetail() {
                         { label: "Brand", value: product.product_info?.brand || "Live Green" },
                         { label: "Net Weight", value: product.product_info?.net_weight || "500g" },
                         { label: "Package Type", value: product.product_info?.package_type || "Glass Jar" },
-                        { label: "Source", value: product.product_info?.source || "Wild Forest, Himalayan Region" },
+                        { label: "Source", value: product.product_info?.source || "Multiflora" },
                         { label: "Extraction", value: product.product_info?.extraction || "Cold-Extracted (Raw)" },
                         { label: "Shelf Life", value: product.product_info?.shelf_life || "24 months" },
                         { label: "Storage", value: product.product_info?.storage || "Cool, dry place away from sunlight" },
