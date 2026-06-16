@@ -241,7 +241,18 @@ async function initDB() {
       discountValue INT NOT NULL,
       minSpend INT DEFAULT 0,
       expiryDate VARCHAR(100),
-      status VARCHAR(50) DEFAULT 'active'
+      status VARCHAR(50) DEFAULT 'active',
+      totalLimit INT DEFAULT 0,
+      usedCount INT DEFAULT 0,
+      oneTimePerUser INTEGER DEFAULT 0,
+      is_private INTEGER DEFAULT 0
+    )`,
+    `CREATE TABLE IF NOT EXISTS promo_code_usage (
+      id SERIAL PRIMARY KEY,
+      promo_code_id INTEGER NOT NULL,
+      email VARCHAR(255),
+      phone VARCHAR(50),
+      used_at VARCHAR(100)
     )`,
     `CREATE TABLE IF NOT EXISTS referrals (
       id SERIAL PRIMARY KEY,
@@ -399,6 +410,21 @@ async function initDB() {
   for (const col of expectedOrderCols) {
     if (!orderColumnNames.includes(col.name.toLowerCase())) {
       await pool.query(`ALTER TABLE orders ADD COLUMN ${col.name} ${col.type}`);
+    }
+  }
+
+  // Ensure promo_codes table has limit/usage columns
+  const [promoColumnRows]: any = await pool.query("SELECT column_name FROM information_schema.columns WHERE table_name = 'promo_codes'");
+  const promoColumnNames = promoColumnRows.map((c: any) => c.column_name.toLowerCase());
+  const expectedPromoCols = [
+    { name: 'totalLimit', type: 'INT DEFAULT 0' },
+    { name: 'usedCount', type: 'INT DEFAULT 0' },
+    { name: 'oneTimePerUser', type: 'INTEGER DEFAULT 0' },
+    { name: 'is_private', type: 'INTEGER DEFAULT 0' },
+  ];
+  for (const col of expectedPromoCols) {
+    if (!promoColumnNames.includes(col.name.toLowerCase())) {
+      await pool.query(`ALTER TABLE promo_codes ADD COLUMN ${col.name} ${col.type}`);
     }
   }
 
@@ -773,7 +799,7 @@ async function startServer() {
   // Active Promos API
   app.get("/api/active_promos", async (req, res) => {
     try {
-      const [rows]: any = await pool.query("SELECT code, discountType, discountValue, minSpend, expiryDate FROM promo_codes WHERE status = 'active'");
+      const [rows]: any = await pool.query("SELECT code, discountType, discountValue, minSpend, expiryDate FROM promo_codes WHERE status = 'active' AND (is_private = 0 OR is_private IS NULL)");
       res.json({ success: true, promos: rows });
     } catch (e) { res.status(500).json({ error: 'DB Error' }); }
   });
@@ -980,17 +1006,49 @@ async function startServer() {
   });
 
   app.post("/api/promo_codes", verifyAdmin, async (req, res) => {
-    const { code, discountType, discountValue, minSpend, expiryDate } = req.body;
+    const { code, discountType, discountValue, minSpend, expiryDate, totalLimit, oneTimePerUser, is_private, status } = req.body;
     try {
-      const [info]: any = await pool.query("INSERT INTO promo_codes (code, discountType, discountValue, minSpend, expiryDate) VALUES (?, ?, ?, ?, ?)",
-        [code.toUpperCase(), discountType, discountValue, minSpend, expiryDate]);
+      const [info]: any = await pool.query(
+        "INSERT INTO promo_codes (code, discountType, discountValue, minSpend, expiryDate, status, totalLimit, oneTimePerUser, is_private) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        [code.toUpperCase(), discountType, discountValue, minSpend || 0, expiryDate || null, status || 'active', totalLimit || 0, oneTimePerUser ? 1 : 0, is_private ? 1 : 0]
+      );
       res.json({ id: info.insertId });
     } catch (e: any) {
-      if (e.code === 'ER_DUP_ENTRY') {
+      // 23505 = Postgres unique_violation, ER_DUP_ENTRY = MySQL
+      if (e.code === '23505' || e.code === 'ER_DUP_ENTRY') {
         res.status(400).json({ error: "Promo code already exists" });
       } else {
+        console.error("Promo create error:", e.message);
         res.status(500).json({ error: "Database error" });
       }
+    }
+  });
+
+  app.put("/api/promo_codes/:id", verifyAdmin, async (req, res) => {
+    const { code, discountType, discountValue, minSpend, expiryDate, status, totalLimit, oneTimePerUser, is_private } = req.body;
+    try {
+      await pool.query(
+        "UPDATE promo_codes SET code = ?, discountType = ?, discountValue = ?, minSpend = ?, expiryDate = ?, status = ?, totalLimit = ?, oneTimePerUser = ?, is_private = ? WHERE id = ?",
+        [code.toUpperCase(), discountType, discountValue, minSpend || 0, expiryDate || null, status || 'active', totalLimit || 0, oneTimePerUser ? 1 : 0, is_private ? 1 : 0, req.params.id]
+      );
+      res.json({ success: true });
+    } catch (e: any) {
+      if (e.code === '23505' || e.code === 'ER_DUP_ENTRY') {
+        res.status(400).json({ error: "Promo code already exists" });
+      } else {
+        console.error("Promo update error:", e.message);
+        res.status(500).json({ error: "Database error" });
+      }
+    }
+  });
+
+  app.delete("/api/promo_codes/:id", verifyAdmin, async (req, res) => {
+    try {
+      await pool.query("DELETE FROM promo_codes WHERE id = ?", [req.params.id]);
+      res.json({ success: true });
+    } catch (e: any) {
+      console.error("Promo delete error:", e.message);
+      res.status(500).json({ error: "Database error" });
     }
   });
 
@@ -1001,7 +1059,7 @@ async function startServer() {
   });
 
   app.post("/api/promo_codes/validate", async (req, res) => {
-    const { code, cartTotal } = req.body;
+    const { code, cartTotal, email, phone } = req.body;
     const [rows]: any = await pool.query("SELECT * FROM promo_codes WHERE code = ?", [code.toUpperCase()]);
     const promo = rows[0];
 
@@ -1009,6 +1067,20 @@ async function startServer() {
     if (promo.status !== "active") return res.status(400).json({ error: "Promo code is no longer active" });
     if (promo.expiryDate && new Date(promo.expiryDate) < new Date()) return res.status(400).json({ error: "Promo code has expired" });
     if (promo.minSpend > 0 && cartTotal < promo.minSpend) return res.status(400).json({ error: `Minimum spend of ₹${promo.minSpend} required` });
+
+    // Global usage limit
+    if (promo.totalLimit > 0 && (promo.usedCount || 0) >= promo.totalLimit) {
+      return res.status(400).json({ error: "Promo code usage limit reached" });
+    }
+
+    // One-time-per-user limit (matched by email or phone)
+    if (promo.oneTimePerUser && (email || phone)) {
+      const [used]: any = await pool.query(
+        "SELECT id FROM promo_code_usage WHERE promo_code_id = ? AND (email = ? OR phone = ?)",
+        [promo.id, email || '', phone || '']
+      );
+      if (used.length > 0) return res.status(400).json({ error: "You have already used this promo code" });
+    }
 
     res.json({ success: true, discountType: promo.discountType, discountValue: promo.discountValue });
   });
@@ -1188,14 +1260,26 @@ async function startServer() {
       }
 
       let discount = 0;
+      let promoCodeId: number | null = null;
       if (promoCode) {
         const [promos]: any = await pool.query("SELECT * FROM promo_codes WHERE code = ? AND status = 'active'", [promoCode.toUpperCase()]);
         if (promos.length > 0) {
           const promo = promos[0];
           const isExpired = promo.expiryDate && new Date(promo.expiryDate) < new Date();
           const isEligible = subtotal >= (promo.minSpend || 0);
+          const limitReached = promo.totalLimit > 0 && (promo.usedCount || 0) >= promo.totalLimit;
 
-          if (!isExpired && isEligible) {
+          let alreadyUsed = false;
+          if (promo.oneTimePerUser && (customerInfo?.email || customerInfo?.phone)) {
+            const [used]: any = await pool.query(
+              "SELECT id FROM promo_code_usage WHERE promo_code_id = ? AND (email = ? OR phone = ?)",
+              [promo.id, customerInfo.email || '', customerInfo.phone || '']
+            );
+            alreadyUsed = used.length > 0;
+          }
+
+          if (!isExpired && isEligible && !limitReached && !alreadyUsed) {
+            promoCodeId = promo.id;
             if (promo.discountType === 'percentage') {
               discount = Math.round((subtotal * promo.discountValue) / 100);
             } else {
@@ -1234,8 +1318,8 @@ async function startServer() {
       // 4. PRE-INSERT order into DB as 'pending'
       // This ensures we have a record before the payment widget even opens
       await pool.query(
-        "INSERT INTO orders (id, customerName, email, phone, address, city, state, zip, items, totalAmount, paymentMethod, paymentId, status, date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        [rzpOrder.id, customerInfo.name, customerInfo.email, customerInfo.phone, customerInfo.address, customerInfo.city, customerInfo.state, customerInfo.zip, JSON.stringify(items), finalAmount, 'razorpay', null, 'pending', new Date().toISOString()]
+        "INSERT INTO orders (id, customerName, email, phone, address, city, state, zip, items, totalAmount, paymentMethod, paymentId, status, date, promoCodeId) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        [rzpOrder.id, customerInfo.name, customerInfo.email, customerInfo.phone, customerInfo.address, customerInfo.city, customerInfo.state, customerInfo.zip, JSON.stringify(items), finalAmount, 'razorpay', null, 'pending', new Date().toISOString(), promoCodeId]
       );
 
       res.json({
@@ -1312,6 +1396,15 @@ async function startServer() {
             await connection.query(
               "UPDATE products SET stock = GREATEST(0, stock - ?) WHERE id = ?",
               [item.quantity, item.id]
+            );
+          }
+
+          // 5b. Promo usage — increment count and record per-user usage.
+          if (order.promoCodeId) {
+            await connection.query("UPDATE promo_codes SET usedCount = COALESCE(usedCount, 0) + 1 WHERE id = ?", [order.promoCodeId]);
+            await connection.query(
+              "INSERT INTO promo_code_usage (promo_code_id, email, phone, used_at) VALUES (?, ?, ?, ?)",
+              [order.promoCodeId, order.email, order.phone, new Date().toISOString()]
             );
           }
 

@@ -86,7 +86,10 @@ export const db = {
             'discountvalue': 'discountValue',
             'minspend': 'minSpend',
             'expirydate': 'expiryDate',
-            
+            'totallimit': 'totalLimit',
+            'usedcount': 'usedCount',
+            'onetimeperuser': 'oneTimePerUser',
+
             // referrals table
             'referreremail': 'referrerEmail',
             'referredemail': 'referredEmail',
@@ -177,6 +180,9 @@ export const db = {
               discountvalue: 'discountValue',
               minspend: 'minSpend',
               expirydate: 'expiryDate',
+              totallimit: 'totalLimit',
+              usedcount: 'usedCount',
+              onetimeperuser: 'oneTimePerUser',
               referreremail: 'referrerEmail',
               referredemail: 'referredEmail',
               rewardcode: 'rewardCode',
