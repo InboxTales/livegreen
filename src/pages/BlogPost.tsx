@@ -47,7 +47,7 @@ export default function BlogPost() {
       <div className="bg-[#FAFAFA] min-h-screen">
         {/* Hero */}
         <div className="relative h-[50vh] min-h-[400px] overflow-hidden">
-          <img src={blog.image} alt={blog.title} className="h-full w-full object-cover" />
+          <img loading="lazy" decoding="async" src={blog.image} alt={blog.title} className="h-full w-full object-cover" />
           <div className="absolute inset-0 bg-gradient-to-t from-[#0D3B0E]/90 via-black/30 to-transparent" />
           <div className="absolute bottom-0 left-0 right-0 p-8 sm:p-12 lg:p-16">
             <div className="mx-auto max-w-3xl">
@@ -108,7 +108,7 @@ export default function BlogPost() {
                   <Link key={rb.id} to={`/blog/${rb.id}`} className="group block">
                     <div className="bg-white rounded-2xl overflow-hidden border border-[#CDDBCE]/30 card-lift cursor-pointer">
                       <div className="aspect-[16/10] overflow-hidden">
-                        <img src={rb.image} alt={rb.title} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110" />
+                        <img loading="lazy" decoding="async" src={rb.image} alt={rb.title} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110" />
                       </div>
                       <div className="p-4">
                         <h3 className="font-serif text-sm font-bold text-[#1B5E20] group-hover:text-[#3A8E3C] transition-colors line-clamp-2">{rb.title}</h3>

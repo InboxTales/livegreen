@@ -225,7 +225,7 @@ export function OrdersTab() {
                                                                     <div className="space-y-4">
                                                                         {order.items.map((item: any, i: number) => (
                                                                             <div key={i} className="flex items-center gap-4">
-                                                                                <img src={item.image} alt={item.name} className="w-12 h-12 rounded-lg object-cover bg-white border border-gray-200" />
+                                                                                <img loading="lazy" decoding="async" src={item.image} alt={item.name} className="w-12 h-12 rounded-lg object-cover bg-white border border-gray-200" />
                                                                                 <div className="flex-1">
                                                                                     <div className="flex items-center gap-2">
                                                                                         <p className="font-medium text-gray-900 text-sm line-clamp-1">{item.name}</p>

@@ -86,7 +86,7 @@ export default function Recipes() {
               className="bg-white rounded-3xl overflow-hidden border border-[#CDDBCE]/30 card-lift cursor-pointer"
             >
               <div className="aspect-[16/9] overflow-hidden relative">
-                <img src={recipe.image} alt={recipe.title} className="h-full w-full object-cover" />
+                <img loading="lazy" decoding="async" src={recipe.image} alt={recipe.title} className="h-full w-full object-cover" />
                 <div className="absolute top-4 right-4 bg-white/90 backdrop-blur-sm text-[10px] font-bold text-[#1B5E20] px-3 py-1 rounded-full uppercase tracking-wider font-inter flex items-center gap-1">
                   <Clock className="h-3 w-3" /> {recipe.time}
                 </div>

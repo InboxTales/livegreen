@@ -96,7 +96,7 @@ export default function HoneyMap() {
                     {/* Selected location info */}
                     <motion.div key={selected.id} initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="space-y-6">
                         <div className="aspect-[16/9] rounded-3xl overflow-hidden shadow-lg border-4 border-white">
-                            <img src={selected.image} alt={selected.name} className="h-full w-full object-cover" />
+                            <img loading="lazy" decoding="async" src={selected.image} alt={selected.name} className="h-full w-full object-cover" />
                         </div>
                         <div>
                             {selected.featured && <span className="text-[10px] font-bold text-[#F5A623] bg-[#FFF8E7] px-3 py-1 rounded-full uppercase tracking-wider font-inter mb-3 inline-block">Primary Source</span>}

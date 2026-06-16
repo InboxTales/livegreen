@@ -54,7 +54,7 @@ export default function Blogs() {
             <Link to={`/blog/${featured.id}`} className="group block">
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-0 bg-white rounded-3xl overflow-hidden border border-[#CDDBCE]/40 card-lift">
                 <div className="aspect-[16/10] lg:aspect-auto overflow-hidden relative">
-                  <img src={featured.image} alt={featured.title} className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105" />
+                  <img loading="lazy" decoding="async" src={featured.image} alt={featured.title} className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105" />
                   <div className="absolute top-4 left-4">
                     <span className="bg-[#1B5E20] text-white text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-wider font-inter">Featured</span>
                   </div>
@@ -80,7 +80,7 @@ export default function Blogs() {
                 <Link to={`/blog/${blog.id}`} className="group block">
                   <div className="bg-white rounded-3xl overflow-hidden border border-[#CDDBCE]/40 card-lift cursor-pointer">
                     <div className="aspect-[16/10] overflow-hidden relative">
-                      <img src={blog.image} alt={blog.title} className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-110" />
+                      <img loading="lazy" decoding="async" src={blog.image} alt={blog.title} className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-110" />
                       <div className="absolute top-4 left-4">
                         <span className="bg-white/90 backdrop-blur-sm text-[10px] text-[#1B5E20] font-semibold px-3 py-1 rounded-full uppercase tracking-wider font-inter">{blog.category}</span>
                       </div>

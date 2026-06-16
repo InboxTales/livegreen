@@ -322,7 +322,7 @@ export function ProductsTab() {
                             <div className="flex items-center gap-6">
                                 {currentItem?.image && (
                                     <div className="h-24 w-24 shrink-0 rounded-xl overflow-hidden border border-gray-200">
-                                        <img src={currentItem.image} alt="Product" className="h-full w-full object-cover" />
+                                        <img loading="lazy" decoding="async" src={currentItem.image} alt="Product" className="h-full w-full object-cover" />
                                     </div>
                                 )}
                                 <div className="flex-1 space-y-2">
@@ -363,7 +363,7 @@ export function ProductsTab() {
                     {filteredItems.map(item => (
                         <motion.div key={item.id} className="group relative overflow-hidden rounded-3xl bg-white shadow-sm border border-gray-100 hover:shadow-xl transition-all duration-300">
                             <div className="relative h-56 overflow-hidden">
-                                <img src={item.image} alt={item.name} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110" />
+                                <img loading="lazy" decoding="async" src={item.image} alt={item.name} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110" />
                                 <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
                                 <div className="absolute top-4 right-4 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300 transform translate-y-2 group-hover:translate-y-0">
                                     <button onClick={(e) => { e.stopPropagation(); setCurrentItem(item); setIsEditing(true); }} className="h-10 w-10 rounded-full bg-white flex items-center justify-center text-gray-700 hover:text-[#1B5E20] transition-all"><Edit className="h-4 w-4" /></button>

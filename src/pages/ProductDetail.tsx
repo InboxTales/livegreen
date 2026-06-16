@@ -262,7 +262,7 @@ export default function ProductDetail() {
                   productImages.map((img, i) => (
                     <button key={i} onClick={() => setSelectedImage(i)}
                       className={`flex-1 aspect-square rounded-xl border-2 overflow-hidden transition-all ${selectedImage === i ? "border-honey shadow-lg shadow-honey/10" : "border-gray-100 opacity-60 hover:opacity-100"}`}>
-                      <img src={img} alt="" className="h-full w-full object-cover" />
+                      <img loading="lazy" decoding="async" src={img} alt="" className="h-full w-full object-cover" />
                     </button>
                   ))
                 }
@@ -788,7 +788,7 @@ export default function ProductDetail() {
                 {relatedProducts.map((rp) => (
                   <Link key={rp.id} to={`/product/${rp.id}`} className="bg-white rounded-[1.5rem] sm:rounded-[2rem] overflow-hidden border border-forest/5 p-1 sm:p-2 transition-all duration-500 hover:shadow-2xl hover:shadow-forest/5 flex flex-col h-full cursor-pointer block">
                     <div className="aspect-[4/5] overflow-hidden rounded-[1.25rem] sm:rounded-[1.5rem] bg-forest/5 relative">
-                      <img src={rp.image} alt={rp.name} className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-110" />
+                      <img loading="lazy" decoding="async" src={rp.image} alt={rp.name} className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-110" />
                       <div className="absolute inset-0 bg-forest/20 opacity-0 group-hover:opacity-100 transition-opacity hidden md:block" />
 
                       <div className="absolute bottom-4 left-4 right-4 translate-y-4 opacity-0 group-hover:translate-y-0 group-hover:opacity-100 transition-all duration-500 hidden md:flex gap-2">
@@ -862,7 +862,7 @@ export default function ProductDetail() {
           >
             <div className="mx-auto max-w-7xl flex items-center justify-end sm:justify-between gap-4">
               <div className="hidden sm:flex items-center gap-4">
-                <img src={product.image} alt={product.name} className="h-12 w-12 rounded-lg object-cover border border-gray-100" />
+                <img loading="lazy" decoding="async" src={product.image} alt={product.name} className="h-12 w-12 rounded-lg object-cover border border-gray-100" />
                 <div>
                   <h3 className="text-sm font-bold text-gray-900 font-inter truncate max-w-[200px]">{product.name}</h3>
                   <div className="flex items-center gap-2">

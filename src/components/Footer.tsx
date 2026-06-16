@@ -18,7 +18,7 @@ export default function Footer() {
           <div className="lg:col-span-5">
             <Link to="/" className="inline-flex items-center gap-4 mb-10 group">
               <div className="h-14 w-14 bg-white rounded-full flex items-center justify-center p-3 transition-transform duration-700 group-hover:rotate-[360deg] shadow-2xl">
-                <img src="/logo.png" alt="LG" className="h-full w-auto" />
+                <img loading="lazy" decoding="async" src="/logo.png" alt="LG" className="h-full w-auto" />
               </div>
               <span className="font-serif text-4xl font-bold tracking-tighter">Live Green</span>
             </Link>
@@ -36,7 +36,7 @@ export default function Footer() {
                 { Icon: Instagram, href: "https://instagram.com/livegreenfarms" },
                 { Icon: Facebook, href: "https://facebook.com/livegreenfarms" },
                 { Icon: Twitter, href: "https://twitter.com/livegreenfarms" },
-                { Icon: () => <img src="https://upload.wikimedia.org/wikipedia/commons/6/6b/WhatsApp.svg" className="h-5 w-5" alt="WA" />, href: "https://chat.whatsapp.com/CIWQCcAPa6q2mLnoXQJoj4" }
+                { Icon: () => <img loading="lazy" decoding="async" src="https://upload.wikimedia.org/wikipedia/commons/6/6b/WhatsApp.svg" className="h-5 w-5" alt="WA" />, href: "https://chat.whatsapp.com/CIWQCcAPa6q2mLnoXQJoj4" }
               ].map((item, i) => (
                 <a key={i} href={item.href} target="_blank" rel="noopener noreferrer" className="h-14 w-14 rounded-full border border-white/10 flex items-center justify-center hover:bg-honey hover:text-forest transition-all duration-500 group relative overflow-hidden">
                   <div className="relative z-10 transition-transform group-hover:scale-110">
@@ -108,7 +108,7 @@ export default function Footer() {
           <div className="flex gap-4">
             <a href="https://wa.me/917070324141" target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 bg-white/5 hover:bg-honey hover:text-forest px-6 py-3 rounded-full border border-white/5 transition-all group">
               <span className="text-[9px] font-black uppercase tracking-[0.3em] text-cream/80 group-hover:text-forest">Chat with us on WhatsApp</span>
-              <img src="https://upload.wikimedia.org/wikipedia/commons/6/6b/WhatsApp.svg" alt="WhatsApp" className="h-4 w-4 opacity-80 group-hover:opacity-100" />
+              <img loading="lazy" decoding="async" src="https://upload.wikimedia.org/wikipedia/commons/6/6b/WhatsApp.svg" alt="WhatsApp" className="h-4 w-4 opacity-80 group-hover:opacity-100" />
             </a>
             <div className="flex items-center gap-3 bg-white/5 px-6 py-3 rounded-full border border-white/5 hidden sm:flex">
               <div className="h-2 w-2 rounded-full bg-honey animate-pulse" />

@@ -124,7 +124,7 @@ export default function About() {
       {/* Hero */}
       <div className="relative bg-[#0D3B0E] py-36 sm:py-44 noise-overlay overflow-hidden">
         <div className="absolute inset-0">
-          <img src="/images/himalayan-forest.png" alt="Forest" className="h-full w-full object-cover opacity-15 scale-105" />
+          <img loading="lazy" decoding="async" src="/images/himalayan-forest.png" alt="Forest" className="h-full w-full object-cover opacity-15 scale-105" />
           <div className="absolute inset-0 bg-gradient-to-b from-[#0D3B0E]/60 to-[#0D3B0E]/95" />
         </div>
         <div className="absolute inset-0 honeycomb-pattern opacity-10" />
@@ -149,7 +149,7 @@ export default function About() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
             <motion.div initial={{ opacity: 0, x: -50 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }} transition={{ duration: 0.8 }} className="relative">
               <div className="aspect-[4/5] rounded-3xl overflow-hidden shadow-2xl shadow-[#1B5E20]/10 border-[6px] border-white">
-                <img src="/images/WhatsApp Image 2026-03-19 at 16.16.35.jpeg" alt="Philosophy" className="h-full w-full object-cover" />
+                <img loading="lazy" decoding="async" src="/images/WhatsApp Image 2026-03-19 at 16.16.35.jpeg" alt="Philosophy" className="h-full w-full object-cover" />
               </div>
               {/* <div className="absolute -bottom-8 -right-8 bg-white p-6 rounded-2xl shadow-xl max-w-xs hidden md:block border border-[#CDDBCE]/30">
                 <p className="font-serif text-lg italic text-[#1B5E20] leading-relaxed">"We believe that nature knows best."</p>
@@ -189,7 +189,7 @@ export default function About() {
 
             <motion.div initial={{ opacity: 0, x: 50 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }} transition={{ duration: 0.8 }} className="relative order-1 lg:order-2">
               <div className="aspect-[4/3] rounded-[2rem] overflow-hidden shadow-2xl relative">
-                <img src="/images/IMG_2005.JPG" alt="Expedition" className="w-full h-full object-cover" />
+                <img loading="lazy" decoding="async" src="/images/IMG_2005.JPG" alt="Expedition" className="w-full h-full object-cover" />
                 <div className="absolute inset-0 bg-[#0D3B0E]/20" />
               </div>
 
@@ -307,7 +307,7 @@ export default function About() {
               <motion.div key={i} initial={{ opacity: 0, y: 30 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: i * 0.1 }}
                 className="bg-white rounded-[2rem] p-6 shadow-xl shadow-[#1B5E20]/5 border border-[#CDDBCE]/30 text-center group hover:-translate-y-2 transition-transform duration-300">
                 <div className="w-32 h-32 mx-auto rounded-full overflow-hidden border-4 border-[#E8F5E9] mb-6 group-hover:border-[#F5A623] transition-colors duration-300">
-                  <img src={member.img} alt={member.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
+                  <img loading="lazy" decoding="async" src={member.img} alt={member.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
                 </div>
                 <h3 className="font-serif text-2xl font-bold text-[#1B5E20] mb-1">{member.name}</h3>
                 <p className="text-xs font-bold text-[#F5A623] uppercase tracking-wider mb-2 font-inter">{member.role}</p>
@@ -348,7 +348,7 @@ export default function About() {
                     className="w-full object-cover transition-transform duration-700 group-hover:scale-110" 
                   />
                 ) : (
-                  <img src={media.url} alt={`Gallery ${idx + 1}`} className="w-full object-cover transition-transform duration-700 group-hover:scale-110" />
+                  <img loading="lazy" decoding="async" src={media.url} alt={`Gallery ${idx + 1}`} className="w-full object-cover transition-transform duration-700 group-hover:scale-110" />
                 )}
                 <div className="absolute inset-0 bg-[#0D3B0E]/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
               </motion.div>

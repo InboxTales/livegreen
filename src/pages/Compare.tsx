@@ -52,7 +52,7 @@ export default function Compare() {
                                         {compareProducts.map((p) => (
                                             <th key={p.id} className="p-2 sm:p-6 text-center w-1/4 sm:w-48 align-bottom">
                                                 <div className="relative inline-block">
-                                                    <img src={p.image} alt={p.name} className="h-12 w-12 sm:h-24 sm:w-24 rounded-2xl object-cover mx-auto mb-2 sm:mb-3 shadow-sm" />
+                                                    <img loading="lazy" decoding="async" src={p.image} alt={p.name} className="h-12 w-12 sm:h-24 sm:w-24 rounded-2xl object-cover mx-auto mb-2 sm:mb-3 shadow-sm" />
                                                     <button onClick={() => toggleSelect(p.id)} className="absolute -top-1 -right-1 sm:-top-2 sm:-right-2 bg-red-100 text-red-600 rounded-full p-1 shadow-sm hover:bg-red-200 transition-colors">
                                                         <X className="h-2 w-2 sm:h-4 sm:w-4" />
                                                     </button>

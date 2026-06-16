@@ -41,11 +41,11 @@ export default function BeforeAfterSlider({ beforeImage, afterImage, beforeLabel
             onMouseDown={() => { dragging.current = true; }}
             onTouchStart={() => { dragging.current = true; }}>
             {/* After (full) */}
-            <img src={afterImage} alt={afterLabel} className="absolute inset-0 h-full w-full object-cover" />
+            <img loading="lazy" decoding="async" src={afterImage} alt={afterLabel} className="absolute inset-0 h-full w-full object-cover" />
 
             {/* Before (clipped) */}
             <div className="absolute inset-0 overflow-hidden" style={{ width: `${position}%` }}>
-                <img src={beforeImage} alt={beforeLabel} className="absolute inset-0 h-full w-full object-cover" style={{ width: `${containerRef.current?.offsetWidth}px` }} />
+                <img loading="lazy" decoding="async" src={beforeImage} alt={beforeLabel} className="absolute inset-0 h-full w-full object-cover" style={{ width: `${containerRef.current?.offsetWidth}px` }} />
             </div>
 
             {/* Divider */}

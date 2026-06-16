@@ -198,7 +198,7 @@ export default function VideoTestimonialsTab() {
                         <div key={video.id} className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden flex flex-col group">
                             <div className="aspect-video bg-gray-100 relative">
                                 {video.thumbnail_url || video.thumbnail ? (
-                                    <img src={video.thumbnail_url || video.thumbnail} alt={video.title} className="w-full h-full object-cover" />
+                                    <img loading="lazy" decoding="async" src={video.thumbnail_url || video.thumbnail} alt={video.title} className="w-full h-full object-cover" />
                                 ) : (
                                     <div className="flex items-center justify-center h-full text-gray-400">
                                         <Video className="h-12 w-12 opacity-50" />

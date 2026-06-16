@@ -50,7 +50,7 @@ export default function Navbar() {
               whileTap={{ scale: 0.95 }}
               className="h-14 w-14 rounded-full bg-white p-1.5 shadow-xl border border-forest/5 flex items-center justify-center overflow-hidden transition-all duration-500"
             >
-              <img src="/logo.png" alt="Live Green"
+              <img loading="lazy" decoding="async" src="/logo.png" alt="Live Green"
                 className="h-full w-full object-contain" />
             </motion.div>
           </Link>

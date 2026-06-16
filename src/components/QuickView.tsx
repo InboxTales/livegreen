@@ -52,7 +52,7 @@ export default function QuickView({ product, onClose }: QuickViewProps) {
                     <div className="grid grid-cols-1 md:grid-cols-2">
                         {/* Image */}
                         <div className="aspect-square bg-[#F5FFF5] relative overflow-hidden">
-                            <img src={product.image} alt={product.name} className="h-full w-full object-cover" />
+                            <img loading="lazy" decoding="async" src={product.image} alt={product.name} className="h-full w-full object-cover" />
                             {product.originalPrice > product.price && (
                                 <div className="absolute top-4 left-4 bg-[#1B5E20] text-white text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-wider font-inter">
                                     -{Math.round(((product.originalPrice - product.price) / product.originalPrice) * 100)}% OFF

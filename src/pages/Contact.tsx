@@ -107,7 +107,7 @@ export default function Contact() {
             <div className="absolute -top-20 -right-20 h-40 w-40 bg-[#3A8E3C]/5 rounded-full blur-3xl" />
             
             <div className="h-20 w-20 bg-[#E8F5E9] rounded-full flex items-center justify-center mb-8">
-              <img src="https://upload.wikimedia.org/wikipedia/commons/6/6b/WhatsApp.svg" alt="WhatsApp" className="h-10 w-10" />
+              <img loading="lazy" decoding="async" src="https://upload.wikimedia.org/wikipedia/commons/6/6b/WhatsApp.svg" alt="WhatsApp" className="h-10 w-10" />
             </div>
 
             <h2 className="mb-4 text-3xl font-bold text-[#1B5E20] font-serif relative z-10">Chat Directly with प्रकृति</h2>

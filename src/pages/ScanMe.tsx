@@ -39,7 +39,7 @@ const ScanMe = () => {
           
           {/* Logo Overlay */}
           <div className="absolute bottom-8 right-8 h-12 w-12 bg-white/10 backdrop-blur-md rounded-2xl p-2.5 border border-white/20">
-            <img src="/logo.png" alt="Live Green" className="w-full h-full object-contain invert brightness-0" />
+            <img loading="lazy" decoding="async" src="/logo.png" alt="Live Green" className="w-full h-full object-contain invert brightness-0" />
           </div>
         </motion.div>
 
