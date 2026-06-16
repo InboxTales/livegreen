@@ -14,12 +14,22 @@ export default function Shop() {
   const { addToCart } = useCart();
   const [activeCategory, setActiveCategory] = useState("All");
   const [addedId, setAddedId] = useState<number | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const gridRef = useRef<HTMLDivElement>(null);
   const { setHoneyTheme, resetTheme } = useDynamicAccents();
 
   useEffect(() => {
-    getProducts().then(setProducts);
-    getPublicSettings().then(setSiteSettings);
+    setLoading(true);
+    setLoadError(null);
+    getProducts()
+      .then((data) => setProducts(Array.isArray(data) ? data : []))
+      .catch((err) => {
+        console.error("Failed to load products:", err);
+        setLoadError("Could not load products. Please make sure the server is running and try again.");
+      })
+      .finally(() => setLoading(false));
+    getPublicSettings().then(setSiteSettings).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -201,7 +211,23 @@ export default function Shop() {
             </AnimatePresence>
           </div>
 
-          {filtered.length === 0 && (
+          {loading && (
+            <div className="flex items-center justify-center py-40">
+              <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-forest" />
+            </div>
+          )}
+
+          {!loading && loadError && (
+            <div className="text-center py-40">
+              <h3 className="font-serif text-2xl font-bold text-forest">Couldn't load products</h3>
+              <p className="text-forest/50 mt-4 font-inter text-sm max-w-md mx-auto">{loadError}</p>
+              <button onClick={() => window.location.reload()} className="mt-10 text-[10px] font-black uppercase tracking-widest text-honey hover:text-forest transition-colors underline decoration-2 underline-offset-8">
+                Retry
+              </button>
+            </div>
+          )}
+
+          {!loading && !loadError && filtered.length === 0 && (
             <div className="text-center py-40">
               <div className="h-20 w-20 bg-forest/5 rounded-full flex items-center justify-center mx-auto mb-8">
                 <Sparkles className="h-8 w-8 text-forest/20" />

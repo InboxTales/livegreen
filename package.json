@@ -4,7 +4,8 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "tsx server.ts",
+    "dev:client": "vite",
     "build": "vite build",
     "start": "tsx server.ts",
     "preview": "vite preview",

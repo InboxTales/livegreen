@@ -16,6 +16,12 @@ export default defineConfig({
   },
   server: {
     allowedHosts: true,
+    // When running the Vite-only dev server (npm run dev:client on :5173),
+    // proxy API/upload calls to the Express server (npm start on :4502).
+    proxy: {
+      "/api": "http://localhost:4502",
+      "/uploads": "http://localhost:4502",
+    },
   },
   build: {
     chunkSizeWarningLimit: 1000,
