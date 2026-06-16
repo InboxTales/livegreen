@@ -80,15 +80,42 @@ export default function Checkout() {
   const totalPrice = Math.max(0, originalTotalPrice - discountAmount + shippingCost);
 
   const zip = watch("zip");
+  const [isLookingUpPin, setIsLookingUpPin] = useState(false);
+  const [pinLookupError, setPinLookupError] = useState("");
 
   useEffect(() => {
     if (zip && zip.length === 6 && /^[1-9][0-9]{5}$/.test(zip)) {
       fetchRates(zip);
+      lookupPincode(zip);
     } else {
       setShippingRates([]);
       setSelectedRate(null);
+      setPinLookupError("");
     }
   }, [zip]);
+
+  // Auto-fill city + state from an Indian PIN code.
+  const lookupPincode = async (pincode: string) => {
+    setIsLookingUpPin(true);
+    setPinLookupError("");
+    try {
+      const res = await fetch(`https://api.postalpincode.in/pincode/${pincode}`);
+      const data = await res.json();
+      const entry = Array.isArray(data) ? data[0] : null;
+      if (entry?.Status === "Success" && entry.PostOffice?.length) {
+        const po = entry.PostOffice[0];
+        // Prefer District as the city; fall back to the post office's region.
+        setValue("city", po.District || po.Block || po.Name || "", { shouldValidate: true });
+        setValue("state", po.State || "", { shouldValidate: true });
+      } else {
+        setPinLookupError("Couldn't find that PIN code — please enter city/state manually.");
+      }
+    } catch {
+      setPinLookupError("PIN lookup failed — please enter city/state manually.");
+    } finally {
+      setIsLookingUpPin(false);
+    }
+  };
 
   const fetchRates = async (pincode: string) => {
     setIsFetchingRates(true);
@@ -428,6 +455,8 @@ export default function Checkout() {
                       inputMode="numeric"
                     />
                     {errors.zip && <p className="mt-1 text-xs text-red-500">{errors.zip.message}</p>}
+                    {isLookingUpPin && <p className="mt-1 text-xs text-gray-400">Looking up city &amp; state…</p>}
+                    {pinLookupError && !errors.zip && <p className="mt-1 text-xs text-amber-600">{pinLookupError}</p>}
                   </div>
                 </div>
               </motion.div>
