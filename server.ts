@@ -120,7 +120,7 @@ const bookOrderShipment = async (order: any): Promise<any> => {
       client_order_id: order.id,
       consignee: {
         name: order.customerName,
-        mobile: (order.phone || '').replace(/[^0-9]/g, '').slice(-10),
+        mobile: String(order.phone || '').replace(/[^0-9]/g, '').slice(-10),
         address: order.address,
         city: order.city,
         pincode: order.zip,
