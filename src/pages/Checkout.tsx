@@ -539,7 +539,7 @@ export default function Checkout() {
                           <span className="text-[10px] font-black text-white bg-[#1B5E20] px-1.5 py-0.5 rounded uppercase">Sub</span>
                         )}
                       </div>
-                      <p className="text-sm text-gray-500 mb-2">500g Jar {item.isSubscription && `• Deliver ${item.frequency}`}</p>
+                      <p className="text-sm text-gray-500 mb-2">{(item.product_info?.net_weight || item.name?.match(/\(([^)]+)\)/)?.[1] || '') + ' '}Jar {item.isSubscription && `• Deliver ${item.frequency}`}</p>
                       <div className="flex items-center gap-3">
                         <div className="flex items-center rounded-lg border border-gray-200 bg-gray-50">
                           <button
