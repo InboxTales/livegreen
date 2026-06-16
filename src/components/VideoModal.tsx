@@ -9,8 +9,16 @@ interface VideoModalProps {
     title?: string;
 }
 
+// Extract a YouTube video ID from watch, youtu.be, shorts, or embed URLs.
+function getYouTubeId(url: string): string | null {
+    if (!url) return null;
+    const m = url.match(/(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/);
+    return m ? m[1] : null;
+}
+
 export default function VideoModal({ isOpen, onClose, videoUrl, title }: VideoModalProps) {
     const videoRef = useRef<HTMLVideoElement>(null);
+    const youTubeId = getYouTubeId(videoUrl);
 
     // Stop video when modal closes
     useEffect(() => {
@@ -37,7 +45,7 @@ export default function VideoModal({ isOpen, onClose, videoUrl, title }: VideoMo
                         animate={{ scale: 1, opacity: 1, y: 0 }}
                         exit={{ scale: 0.95, opacity: 0, y: 10 }}
                         transition={{ type: "spring", damping: 25, stiffness: 300 }}
-                        className="relative w-full max-w-5xl aspect-video bg-black rounded-2xl sm:rounded-3xl overflow-hidden shadow-2xl border border-white/10"
+                        className={`relative w-full bg-black rounded-2xl sm:rounded-3xl overflow-hidden shadow-2xl border border-white/10 ${youTubeId ? "max-w-[420px] aspect-[9/16] max-h-[90vh]" : "max-w-5xl aspect-video"}`}
                         onClick={(e) => e.stopPropagation()}
                     >
                         {/* Close button */}
@@ -48,8 +56,20 @@ export default function VideoModal({ isOpen, onClose, videoUrl, title }: VideoMo
                             <X className="h-5 w-5 sm:h-6 sm:w-6 group-hover:scale-110 transition-transform" />
                         </button>
 
-                        {/* Video Player */}
-                        {videoUrl && (
+                        {/* YouTube embed */}
+                        {youTubeId && (
+                            <iframe
+                                src={`https://www.youtube.com/embed/${youTubeId}?autoplay=1&rel=0&playsinline=1&modestbranding=1`}
+                                className="w-full h-full"
+                                title={title || "Video testimonial"}
+                                frameBorder="0"
+                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                                allowFullScreen
+                            />
+                        )}
+
+                        {/* Direct video file */}
+                        {videoUrl && !youTubeId && (
                             <video
                                 ref={videoRef}
                                 src={videoUrl}

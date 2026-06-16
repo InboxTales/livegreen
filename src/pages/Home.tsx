@@ -108,26 +108,26 @@ export default function Home() {
             name: 'Vinny Gidda', 
             location: 'Hyderabad', 
             title: 'I trust Live Green Honey for my kid!', 
-            video_url: '/videos/1773918051_WhatsApp_Video_2026-03-19_at_13.45.14.mp4',
-            thumbnail_url: '/videos/1773918051_WhatsApp_Video_2026-03-19_at_13.45.14.mp4',
+            video_url: 'https://youtube.com/shorts/SIzVDLtq66M',
+            thumbnail_url: 'https://i.ytimg.com/vi/SIzVDLtq66M/hqdefault.jpg',
             duration: '0:45'
           },
           {
-            id: 'v2', 
-            name: 'Aravind P', 
-            location: 'Jagital', 
-            title: 'Organic honey from Godavari!', 
-            video_url: '/videos/1773918050_WhatsApp_Video_2026-03-19_at_13.45.13.mp4',
-            thumbnail_url: '/videos/1773918050_WhatsApp_Video_2026-03-19_at_13.45.13.mp4',
+            id: 'v2',
+            name: 'Aravind P',
+            location: 'Jagital',
+            title: 'Organic honey from Godavari!',
+            video_url: 'https://youtube.com/shorts/S3Yl-LVRVb4',
+            thumbnail_url: 'https://i.ytimg.com/vi/S3Yl-LVRVb4/hqdefault.jpg',
             duration: '1:12'
           },
           {
-            id: 'v3', 
-            name: 'Poojitha', 
-            location: 'Hyderabad', 
-            title: 'I stopped using sugar the day I tried this honey', 
-            video_url: '/videos/1773918051_WhatsApp_Video_2026-03-19_at_13.45.14_(1).mp4',
-            thumbnail_url: '/videos/1773918051_WhatsApp_Video_2026-03-19_at_13.45.14_(1).mp4',
+            id: 'v3',
+            name: 'Poojitha',
+            location: 'Hyderabad',
+            title: 'I stopped using sugar the day I tried this honey',
+            video_url: 'https://youtube.com/shorts/QW70oYtVMI8',
+            thumbnail_url: 'https://i.ytimg.com/vi/QW70oYtVMI8/hqdefault.jpg',
             duration: '0:58'
           }
         ]);
@@ -631,70 +631,30 @@ export default function Home() {
                   name: "Vinny Gidda",
                   location: "Hyderabad",
                   title: "I trust Live Green Honey for my kid!",
-                  video_url: "/videos/1773918051_WhatsApp_Video_2026-03-19_at_13.45.14.mp4",
-                  thumbnail: "/videos/1773918051_WhatsApp_Video_2026-03-19_at_13.45.14.mp4",
+                  video_url: "https://youtube.com/shorts/SIzVDLtq66M",
+                  thumbnail: "https://i.ytimg.com/vi/SIzVDLtq66M/hqdefault.jpg",
                   duration: "0:45"
                 },
                 {
                   name: "Aravind P",
                   location: "Jagital",
                   title: "Organic honey from Live Green! Full of health & Purity!",
-                  video_url: "/videos/1773918050_WhatsApp_Video_2026-03-19_at_13.45.13.mp4",
-                  thumbnail: "/videos/1773918050_WhatsApp_Video_2026-03-19_at_13.45.13.mp4",
+                  video_url: "https://youtube.com/shorts/S3Yl-LVRVb4",
+                  thumbnail: "https://i.ytimg.com/vi/S3Yl-LVRVb4/hqdefault.jpg",
                   duration: "1:12"
                 },
                 {
                   name: "Poojitha",
                   location: "Hyderabad",
                   title: "I stopped using sugar the day I tried this honey",
-                  video_url: "/videos/1773918051_WhatsApp_Video_2026-03-19_at_13.45.14_(1).mp4",
-                  thumbnail: "/videos/1773918051_WhatsApp_Video_2026-03-19_at_13.45.14_(1).mp4",
+                  video_url: "https://youtube.com/shorts/QW70oYtVMI8",
+                  thumbnail: "https://i.ytimg.com/vi/QW70oYtVMI8/hqdefault.jpg",
                   duration: "0:58"
                 }
               ];
 
-              // Create a combined list ensuring the requested ones are prioritized in order
-              let displayVideos = [...videoTestimonials];
-
-              // If we have less than 3 videos or the focus one is missing from the first spot,
-              // we should re-organize to ensure Vinny is first.
-              const vinnyUrl = "/videos/1773918051_WhatsApp_Video_2026-03-19_at_13.45.14.mp4";
-              const hasVinny = displayVideos.some(v => (v.video_url || v.url) === vinnyUrl);
-
-              if (!hasVinny || displayVideos.length < 3) {
-                // If Vinny is not in the list, add him at the start
-                if (!hasVinny) {
-                  displayVideos = [fallbacks[0], ...displayVideos];
-                } else {
-                  // If Vinny is in the list but not first, move him to first
-                  const vinnyIdx = displayVideos.findIndex(v => (v.video_url || v.url) === vinnyUrl);
-                  if (vinnyIdx > 0) {
-                    const vinny = displayVideos.splice(vinnyIdx, 1)[0];
-                    displayVideos.unshift(vinny);
-                  }
-                }
-
-                // Add other fallbacks if we still don't have enough
-                fallbacks.slice(1).forEach(fb => {
-                  if (!displayVideos.some(v => (v.video_url || v.url) === fb.video_url)) {
-                    displayVideos.push(fb);
-                  }
-                });
-              }
-
-              displayVideos = displayVideos.map(v => {
-                const url = v.video_url || v.url;
-                if (url === "/videos/1773918051_WhatsApp_Video_2026-03-19_at_13.45.14.mp4") {
-                  return { ...v, name: "Vinny Gidda", location: "Hyderabad", title: "I trust Live Green Honey for my kid!" };
-                }
-                if (url === "/videos/1773918050_WhatsApp_Video_2026-03-19_at_13.45.13.mp4") {
-                  return { ...v, name: "Aravind P", location: "Jagital", title: "Organic honey from Live Green! Full of health & Purity!" };
-                }
-                if (url === "/videos/1773918051_WhatsApp_Video_2026-03-19_at_13.45.14_(1).mp4") {
-                  return { ...v, name: "Poojitha", location: "Hyderabad", title: "I stopped using sugar the day I tried this honey" };
-                }
-                return v;
-              });
+              // Use admin-managed testimonials if present, otherwise the YouTube fallbacks.
+              const displayVideos = videoTestimonials.length >= 3 ? [...videoTestimonials] : fallbacks;
 
               return displayVideos.slice(0, 3);
             })().map((video, idx) => {
