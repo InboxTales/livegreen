@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { getOrders, updateOrderStatus, Order } from "@/lib/api";
+import { getOrders, updateOrderStatus, bookOrderShipment, Order } from "@/lib/api";
 import { Input } from "@/components/ui/input";
 import { Search, ChevronDown, Check, X } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
@@ -9,6 +9,20 @@ export function OrdersTab() {
     const [searchTerm, setSearchTerm] = useState("");
     const [filterType, setFilterType] = useState<"all" | "standard" | "subscription">("all");
     const [expandedOrder, setExpandedOrder] = useState<string | null>(null);
+    const [bookingId, setBookingId] = useState<string | null>(null);
+
+    const handleBookShipment = async (id: string) => {
+        setBookingId(id);
+        try {
+            const res = await bookOrderShipment(id);
+            if (!res.success) alert(`iCarry booking failed:\n\n${res.error}`);
+            await loadOrders();
+        } catch (e: any) {
+            alert(`iCarry booking failed:\n\n${e.message}`);
+        } finally {
+            setBookingId(null);
+        }
+    };
 
     useEffect(() => {
         loadOrders();
@@ -187,6 +201,21 @@ export function OrdersTab() {
                                                                                         Track Package &rarr;
                                                                                     </a>
                                                                                 )}
+                                                                            </div>
+                                                                        )}
+                                                                        {!order.icarry_shipment_id && (
+                                                                            <div className="mt-4 p-3 bg-amber-50 border border-amber-100 rounded-lg">
+                                                                                <p className="font-medium text-amber-800 mb-1">No iCarry shipment booked</p>
+                                                                                {order.icarry_error && (
+                                                                                    <p className="text-xs text-red-700 break-words mb-2"><span className="font-medium">Last error:</span> {order.icarry_error}</p>
+                                                                                )}
+                                                                                <button
+                                                                                    onClick={() => handleBookShipment(order.id)}
+                                                                                    disabled={bookingId === order.id}
+                                                                                    className="px-3 py-1.5 text-xs font-bold rounded-lg bg-[#1B5E20] text-white hover:bg-[#164a1a] disabled:opacity-50 transition"
+                                                                                >
+                                                                                    {bookingId === order.id ? "Booking…" : (order.icarry_error ? "Retry iCarry booking" : "Book iCarry shipment")}
+                                                                                </button>
                                                                             </div>
                                                                         )}
                                                                     </div>

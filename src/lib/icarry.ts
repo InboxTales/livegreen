@@ -178,7 +178,7 @@ export class ICarryClient {
         return {
           shipment_id: String(data.shipment_id),
           awb: data.awb || null,
-          tracking_url: data.tracking_url || `https://www.icarry.in/track-shipment&awb=${data.awb}`,
+          tracking_url: data.tracking_url || `https://www.icarry.in/track-shipment?awb=${data.awb}`,
           courier_name: data.courier_name_full || data.courier_name || null,
           pickup_scheduled: data.success || null,
           cost_estimate: data.cost_estimate || null,

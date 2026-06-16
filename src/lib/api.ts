@@ -193,6 +193,7 @@ export interface Order {
   icarry_awb?: string;
   icarry_tracking_url?: string;
   icarry_status?: string;
+  icarry_error?: string;
   date: string;
 }
 
@@ -481,6 +482,10 @@ export async function updateOrderStatus(id: string, status: string) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ status })
   });
+}
+
+export async function bookOrderShipment(id: string): Promise<{ success: boolean; error?: string; awb?: string; shipment_id?: string }> {
+  return fetchAuth(`/api/orders/${id}/book_shipment`, { method: "POST" });
 }
 
 export async function cancelSubscription(orderId: string) {
