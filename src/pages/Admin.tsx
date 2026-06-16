@@ -1,24 +1,26 @@
-import React, { useState, useEffect } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import { LayoutDashboard, ShoppingBag, Users, Package, FileText, Ticket, MessageSquare, Star, Gift, LogOut, ArrowLeft, Settings as SettingsIcon, Globe, Video, Bell, History, Mail, Database, ShieldCheck } from "lucide-react";
-import { DashboardTab } from "@/components/admin/DashboardTab";
-import { OrdersTab } from "@/components/admin/OrdersTab";
-import { CustomersTab } from "@/components/admin/CustomersTab";
-import { ProductsTab } from "@/components/admin/ProductsTab";
-import { BlogsTab } from "@/components/admin/BlogsTab";
-import { PromoCodesTab } from "@/components/admin/PromoCodesTab";
-import { InquiriesTab } from "@/components/admin/InquiriesTab";
-import { ReviewsTab } from "@/components/admin/ReviewsTab";
-import { ReferralsTab } from "@/components/admin/ReferralsTab";
+import React, { useState, useEffect, lazy, Suspense } from "react";
+import { useNavigate } from "react-router-dom";
+import { LayoutDashboard, ShoppingBag, Users, Package, FileText, Ticket, MessageSquare, Star, Gift, LogOut, ArrowLeft, Settings as SettingsIcon, Globe, Video, History, Mail, ShieldCheck } from "lucide-react";
 import { AdminLogin } from "@/components/admin/AdminLogin";
 import { useAuth } from "@/context/AuthContext";
-import { SettingsPage } from "@/components/admin/SettingsPage";
-import { GoogleReviewsTab } from "@/components/admin/GoogleReviewsTab";
-import VideoTestimonialsTab from "@/components/admin/VideoTestimonialsTab";
-import { SubscriptionsTab } from "@/components/admin/SubscriptionsTab";
-import { AuditLogTab } from "@/components/admin/AuditLogTab";
-import { EmailCampaignsTab } from "@/components/admin/EmailCampaignsTab";
 import { Button } from "@/components/ui/button";
+
+// Lazy-load each tab so its code (and heavy deps like recharts) only loads when opened.
+const DashboardTab = lazy(() => import("@/components/admin/DashboardTab").then(m => ({ default: m.DashboardTab })));
+const OrdersTab = lazy(() => import("@/components/admin/OrdersTab").then(m => ({ default: m.OrdersTab })));
+const CustomersTab = lazy(() => import("@/components/admin/CustomersTab").then(m => ({ default: m.CustomersTab })));
+const ProductsTab = lazy(() => import("@/components/admin/ProductsTab").then(m => ({ default: m.ProductsTab })));
+const BlogsTab = lazy(() => import("@/components/admin/BlogsTab").then(m => ({ default: m.BlogsTab })));
+const PromoCodesTab = lazy(() => import("@/components/admin/PromoCodesTab").then(m => ({ default: m.PromoCodesTab })));
+const InquiriesTab = lazy(() => import("@/components/admin/InquiriesTab").then(m => ({ default: m.InquiriesTab })));
+const ReviewsTab = lazy(() => import("@/components/admin/ReviewsTab").then(m => ({ default: m.ReviewsTab })));
+const ReferralsTab = lazy(() => import("@/components/admin/ReferralsTab").then(m => ({ default: m.ReferralsTab })));
+const SettingsPage = lazy(() => import("@/components/admin/SettingsPage").then(m => ({ default: m.SettingsPage })));
+const GoogleReviewsTab = lazy(() => import("@/components/admin/GoogleReviewsTab").then(m => ({ default: m.GoogleReviewsTab })));
+const VideoTestimonialsTab = lazy(() => import("@/components/admin/VideoTestimonialsTab"));
+const SubscriptionsTab = lazy(() => import("@/components/admin/SubscriptionsTab").then(m => ({ default: m.SubscriptionsTab })));
+const AuditLogTab = lazy(() => import("@/components/admin/AuditLogTab").then(m => ({ default: m.AuditLogTab })));
+const EmailCampaignsTab = lazy(() => import("@/components/admin/EmailCampaignsTab").then(m => ({ default: m.EmailCampaignsTab })));
 
 type TabId = 'dashboard' | 'orders' | 'customers' | 'products' | 'blogs' | 'promos' | 'inquiries' | 'reviews' | 'google-reviews' | 'video-testimonials' | 'referrals' | 'subscriptions' | 'audit-log' | 'email-campaigns';
 
@@ -170,6 +172,7 @@ function AdminDashboardContent() {
       {/* Main Content */}
       <div className="flex-1 md:ml-64 p-4 sm:p-6 md:p-10 transition-all duration-300 w-full overflow-x-hidden">
         <div className="max-w-7xl mx-auto w-full">
+          <Suspense fallback={<div className="flex items-center justify-center py-32"><div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-[#1B5E20]" /></div>}>
           {activeTab === 'dashboard' && <DashboardTab />}
           {activeTab === 'orders' && <OrdersTab />}
           {activeTab === 'customers' && <CustomersTab />}
@@ -185,6 +188,7 @@ function AdminDashboardContent() {
           {activeTab === 'audit-log' && <AuditLogTab />}
           {activeTab === 'email-campaigns' && <EmailCampaignsTab />}
           {activeTab === 'settings' && <SettingsPage />}
+          </Suspense>
         </div>
       </div>
     </div>

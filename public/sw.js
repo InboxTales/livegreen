@@ -1,47 +1,82 @@
-const CACHE_NAME = 'lgh-cache-v1';
-const urlsToCache = [
-    '/',
-    '/index.html',
-    '/manifest.json',
-];
+// Bump this version on every deploy-shape change to purge old caches.
+const CACHE_NAME = 'lgh-cache-v2';
+const OFFLINE_SHELL = '/index.html';
 
-// Install
+// Install — precache the app shell.
 self.addEventListener('install', (event) => {
     event.waitUntil(
-        caches.open(CACHE_NAME).then(cache => cache.addAll(urlsToCache))
+        caches.open(CACHE_NAME).then(cache => cache.addAll(['/', OFFLINE_SHELL, '/manifest.json']))
     );
     self.skipWaiting();
 });
 
-// Activate — clean old caches
+// Activate — drop old caches.
 self.addEventListener('activate', (event) => {
     event.waitUntil(
         caches.keys().then(names =>
             Promise.all(names.filter(n => n !== CACHE_NAME).map(n => caches.delete(n)))
-        )
+        ).then(() => self.clients.claim())
     );
-    self.clients.claim();
 });
 
-// Fetch — Network first, fallback to cache
 self.addEventListener('fetch', (event) => {
-    // Skip API calls and non-GET requests
-    if (event.request.method !== 'GET' || event.request.url.includes('/api/')) {
+    const req = event.request;
+
+    // Skip non-GET and API calls entirely.
+    if (req.method !== 'GET' || req.url.includes('/api/')) return;
+
+    const url = new URL(req.url);
+    // Only handle same-origin requests.
+    if (url.origin !== self.location.origin) return;
+
+    // HTML navigations: ALWAYS network-first so the served index.html references
+    // the current (hashed) JS/CSS chunks. Stale HTML pointing at deleted chunks
+    // is what produced blank pages after a deploy. Fall back to cached shell only
+    // when offline.
+    if (req.mode === 'navigate') {
+        event.respondWith(
+            fetch(req)
+                .then(res => {
+                    const clone = res.clone();
+                    caches.open(CACHE_NAME).then(c => c.put(OFFLINE_SHELL, clone));
+                    return res;
+                })
+                .catch(() => caches.match(OFFLINE_SHELL).then(r => r || caches.match('/')))
+        );
         return;
     }
 
-    event.respondWith(
-        fetch(event.request)
-            .then(response => {
-                // Clone and cache successful responses
-                if (response.status === 200) {
-                    const clone = response.clone();
-                    caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
+    // Hashed build assets are immutable — cache-first for speed.
+    if (url.pathname.startsWith('/assets/')) {
+        event.respondWith(
+            caches.match(req).then(cached => cached || fetch(req).then(res => {
+                if (res.status === 200) {
+                    const clone = res.clone();
+                    caches.open(CACHE_NAME).then(c => c.put(req, clone));
                 }
-                return response;
+                return res;
+            }))
+        );
+        return;
+    }
+
+    // Everything else (images, fonts, etc.): network-first, fallback to cache.
+    event.respondWith(
+        fetch(req)
+            .then(res => {
+                if (res.status === 200) {
+                    const clone = res.clone();
+                    caches.open(CACHE_NAME).then(c => c.put(req, clone));
+                }
+                return res;
             })
-            .catch(() => caches.match(event.request))
+            .catch(() => caches.match(req))
     );
+});
+
+// Allow the page to trigger an immediate SW takeover after an update.
+self.addEventListener('message', (event) => {
+    if (event.data === 'SKIP_WAITING') self.skipWaiting();
 });
 
 // Push notifications

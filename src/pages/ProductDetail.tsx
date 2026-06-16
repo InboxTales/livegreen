@@ -69,26 +69,26 @@ export default function ProductDetail() {
         return;
       }
 
+      // Fire all requests in parallel — no waterfall. The product itself renders
+      // as soon as it resolves; secondary data fills in independently.
       getProduct(productId)
-        .then(async (prod) => {
-          setProduct(prod);
-          
-          getProductReviews(productId)
-            .then(setReviews)
-            .catch(e => console.error("Reviews failed", e));
-            
-          getGoogleReviews()
-            .then(res => setGoogleReviews(res.reviews.filter(r => r.product_id === productId)))
-            .catch(e => console.error("Google reviews failed", e));
-            
-          getProducts()
-            .then((prods) => setRelatedProducts(prods.filter(p => p.id !== productId && p.stock > 0).slice(0, 4)))
-            .catch(e => console.error("Related products failed", e));
-        })
+        .then(setProduct)
         .catch(err => {
           console.error("Error loading product data:", err);
           setError("Failed to load product details. Please try again later.");
         });
+
+      getProductReviews(productId)
+        .then(setReviews)
+        .catch(e => console.error("Reviews failed", e));
+
+      getGoogleReviews()
+        .then(res => setGoogleReviews(res.reviews.filter(r => r.product_id === productId)))
+        .catch(e => console.error("Google reviews failed", e));
+
+      getProducts()
+        .then((prods) => setRelatedProducts(prods.filter(p => p.id !== productId && p.stock > 0).slice(0, 4)))
+        .catch(e => console.error("Related products failed", e));
     }
     setQuantity(1);
     setSelectedImage(0);

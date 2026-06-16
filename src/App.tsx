@@ -9,17 +9,17 @@ import { AuthProvider } from "@/context/AuthContext";
 import { Layout } from "@/components/Layout";
 import ScrollToTop from "@/components/ScrollToTop";
 import Home from "@/pages/Home";
-import Shop from "@/pages/Shop";
-import Blogs from "@/pages/Blogs";
-import BlogPost from "@/pages/BlogPost";
-import About from "@/pages/About";
-import Contact from "@/pages/Contact";
-import FAQ from "@/pages/FAQ";
-import Checkout from "@/pages/Checkout";
-import Success from "@/pages/Success";
-import ScanMe from "@/pages/ScanMe";
 
 // Lazy load pages for performance
+const Shop = lazy(() => import("@/pages/Shop"));
+const Blogs = lazy(() => import("@/pages/Blogs"));
+const BlogPost = lazy(() => import("@/pages/BlogPost"));
+const About = lazy(() => import("@/pages/About"));
+const Contact = lazy(() => import("@/pages/Contact"));
+const FAQ = lazy(() => import("@/pages/FAQ"));
+const Checkout = lazy(() => import("@/pages/Checkout"));
+const Success = lazy(() => import("@/pages/Success"));
+const ScanMe = lazy(() => import("@/pages/ScanMe"));
 const ProductDetail = lazy(() => import("@/pages/ProductDetail"));
 const HowWeWork = lazy(() => import("@/pages/HowWeWork"));
 const Recipes = lazy(() => import("@/pages/Recipes"));

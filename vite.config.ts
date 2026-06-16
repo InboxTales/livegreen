@@ -19,5 +19,20 @@ export default defineConfig({
   },
   build: {
     chunkSizeWarningLimit: 1000,
+    rollupOptions: {
+      output: {
+        // Split heavy/independent deps into their own chunks so they cache
+        // separately and don't bloat the initial bundle.
+        manualChunks(id) {
+          if (!id.includes('node_modules')) return;
+          if (id.includes('recharts') || id.includes('d3-')) return 'charts';
+          if (id.includes('gsap')) return 'gsap';
+          if (id.includes('/motion/') || id.includes('framer-motion')) return 'motion';
+          if (id.includes('react-router')) return 'router';
+          if (id.includes('react-dom') || id.includes('/react/') || id.includes('scheduler')) return 'react-vendor';
+          return 'vendor';
+        },
+      },
+    },
   },
 });
