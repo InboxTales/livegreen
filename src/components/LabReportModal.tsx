@@ -1,6 +1,6 @@
 import React from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { X, Download, Shield, Check } from "lucide-react";
+import { X, Shield, Check } from "lucide-react";
 
 interface LabReportModalProps {
     isOpen: boolean;
@@ -99,11 +99,8 @@ export default function LabReportModal({ isOpen, onClose, productName = "Raw Hon
                         </div>
 
                         {/* Footer */}
-                        <div className="px-8 py-4 border-t border-[#CDDBCE]/20 flex items-center justify-between bg-[#FAFAFA]">
+                        <div className="px-8 py-4 border-t border-[#CDDBCE]/20 flex items-center justify-center bg-[#FAFAFA]">
                             <p className="text-[10px] text-[#6B9E6E] font-inter">Tested by National Dairy Research Institute (NDRI)</p>
-                            <button className="btn-secondary h-8 px-4 text-xs cursor-pointer inline-flex items-center gap-1.5 font-inter">
-                                <Download className="h-3 w-3" /> Download PDF
-                            </button>
                         </div>
                     </motion.div>
                 </motion.div>
