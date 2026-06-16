@@ -13,7 +13,15 @@ import crypto from "crypto";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-const JWT_SECRET = process.env.JWT_SECRET || 'livegreen_secure_jwt_secret_2026';
+const IS_PROD = process.env.NODE_ENV === 'production' || !!process.env.VERCEL;
+
+const JWT_SECRET = process.env.JWT_SECRET || (() => {
+  if (IS_PROD) {
+    throw new Error('JWT_SECRET is required in production. Set it in environment variables.');
+  }
+  console.warn('[security] JWT_SECRET not set — using insecure dev fallback. Do NOT use in production.');
+  return 'livegreen_dev_only_insecure_secret';
+})();
 
 // Middleware for Admin Auth
 const verifyAdmin = (req: express.Request, res: express.Response, next: express.NextFunction) => {
@@ -85,6 +93,72 @@ const getICarryClient = async () => {
   return null;
 };
 
+// Book an iCarry shipment for an order row. Persists success fields or the error
+// string onto the order so failures are visible in the admin UI / DB.
+// Returns { success, ...details } or { success: false, error }.
+const bookOrderShipment = async (order: any): Promise<any> => {
+  const icarryClient = await getICarryClient();
+  if (!icarryClient) {
+    const error = 'iCarry not configured (ICARRY_USERNAME/ICARRY_KEY missing)';
+    await pool.query("UPDATE orders SET icarry_error = ? WHERE id = ?", [error, order.id]);
+    return { success: false, error };
+  }
+
+  const pickupId = await getSetting('icarry_pickup_address_id');
+  if (!pickupId) {
+    const error = 'icarry_pickup_address_id not configured in settings';
+    await pool.query("UPDATE orders SET icarry_error = ? WHERE id = ?", [error, order.id]);
+    return { success: false, error };
+  }
+
+  try {
+    const orderItems = JSON.parse(order.items || '[]');
+    const weightGrams = Math.max(500, orderItems.reduce((sum: number, i: any) => sum + (i.quantity || 1) * 500, 0));
+
+    const bookingResult = await icarryClient.bookShipment({
+      pickup_address_id: pickupId,
+      client_order_id: order.id,
+      consignee: {
+        name: order.customerName,
+        mobile: (order.phone || '').replace(/[^0-9]/g, '').slice(-10),
+        address: order.address,
+        city: order.city,
+        pincode: order.zip,
+        state: ICarryClient.getStateCode(order.state),
+      },
+      parcel: {
+        type: order.paymentMethod === 'cod' ? 'COD' : 'Prepaid',
+        value: Math.max(1, order.totalAmount),
+        contents: orderItems.map((i: any) => i.name).join(', '),
+      },
+      measurements: { weight: weightGrams, length: 15, breadth: 15, height: 10 },
+    });
+
+    if (bookingResult?.shipment_id) {
+      await pool.query(
+        "UPDATE orders SET icarry_shipment_id = ?, icarry_awb = ?, icarry_tracking_url = ?, icarry_status = 'booked', icarry_error = NULL, status = 'processing' WHERE id = ?",
+        [bookingResult.shipment_id, bookingResult.awb, bookingResult.tracking_url, order.id]
+      );
+      console.log(`[iCarry] Shipment ${bookingResult.shipment_id} booked for order ${order.id} — AWB: ${bookingResult.awb} via ${bookingResult.courier_name}`);
+      return { success: true, ...bookingResult };
+    }
+
+    const error = 'Booking returned no shipment_id';
+    await pool.query("UPDATE orders SET icarry_error = ? WHERE id = ?", [error, order.id]);
+    console.error('[iCarry] Booking returned no shipment_id:', bookingResult);
+    return { success: false, error, raw: bookingResult };
+  } catch (icarryErr: any) {
+    // Capture the real upstream error (axios response body if present) for diagnosis.
+    const detail = icarryErr?.response?.data
+      ? (typeof icarryErr.response.data === 'string' ? icarryErr.response.data : JSON.stringify(icarryErr.response.data))
+      : icarryErr.message;
+    const error = `iCarry booking failed: ${detail}`;
+    await pool.query("UPDATE orders SET icarry_error = ? WHERE id = ?", [error, order.id]);
+    console.error('[iCarry] Shipment booking failed (order is still paid):', error);
+    return { success: false, error };
+  }
+};
+
 async function initDB() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS products (
@@ -142,6 +216,7 @@ async function initDB() {
       icarry_awb TEXT,
       icarry_tracking_url TEXT,
       icarry_status TEXT,
+      icarry_error TEXT,
       is_subscription INTEGER DEFAULT 0,
       promoCodeId INTEGER
     )`,
@@ -316,6 +391,7 @@ async function initDB() {
     { name: 'icarry_awb', type: 'TEXT' },
     { name: 'icarry_tracking_url', type: 'TEXT' },
     { name: 'icarry_status', type: 'TEXT' },
+    { name: 'icarry_error', type: 'TEXT' },
     { name: 'is_subscription', type: 'INTEGER DEFAULT 0' },
     { name: 'promoCodeId', type: 'INTEGER' }
   ];
@@ -358,8 +434,16 @@ async function initDB() {
 
   const [adminCnt]: any = await pool.query("SELECT count(*) as count FROM admin_users");
   if (Number(adminCnt[0].count) === 0) {
-    const defaultPass = await bcrypt.hash('password', 10);
-    await pool.query("INSERT INTO admin_users (username, passwordHash) VALUES (?, ?) ON CONFLICT (username) DO NOTHING", ['admin', defaultPass]);
+    const adminUser = process.env.ADMIN_USERNAME || 'admin';
+    // Never seed a hardcoded password. Use env, else generate a random one and log it once.
+    let adminPass = process.env.ADMIN_PASSWORD;
+    if (!adminPass) {
+      adminPass = crypto.randomBytes(12).toString('base64url');
+      console.warn(`[security] No ADMIN_PASSWORD set. Generated initial admin password for "${adminUser}": ${adminPass}`);
+      console.warn('[security] Save this now and change it after first login. It will NOT be shown again.');
+    }
+    const hash = await bcrypt.hash(adminPass, 10);
+    await pool.query("INSERT INTO admin_users (username, passwordHash) VALUES (?, ?) ON CONFLICT (username) DO NOTHING", [adminUser, hash]);
   }
 
   const [prodCnt]: any = await pool.query("SELECT count(*) as count FROM products");
@@ -1024,50 +1108,12 @@ async function startServer() {
 
       await connection.commit();
 
-      // Automatic iCarry Booking if possible
-      const icarryClient = await getICarryClient();
-      if (icarryClient && !icarry_shipment_id) {
-        const pickupId = await getSetting('icarry_pickup_address_id');
-        if (pickupId) {
-          try {
-            const weightGrams = Math.max(500, items.reduce((sum: number, i: any) => sum + (i.quantity || 1) * 500, 0));
-            const bookingResult = await icarryClient.bookShipment({
-              pickup_address_id: pickupId,
-              client_order_id: id,
-              consignee: {
-                name: customerName,
-                mobile: phone.replace(/[^0-9]/g, '').slice(-10),
-                address: address,
-                city: city,
-                pincode: zip,
-                state: ICarryClient.getStateCode(state),
-              },
-              parcel: {
-                type: paymentMethod === 'cod' ? 'COD' : 'Prepaid',
-                value: Math.max(1, totalAmount),
-                contents: items.map((i: any) => i.name).join(', '),
-              },
-              measurements: {
-                weight: weightGrams,
-                length: 15,
-                breadth: 15,
-                height: 10,
-              },
-            });
-
-            if (bookingResult?.shipment_id) {
-              await pool.query(
-                "UPDATE orders SET icarry_shipment_id = ?, icarry_awb = ?, icarry_tracking_url = ?, icarry_status = 'booked', status = 'processing' WHERE id = ?",
-                [bookingResult.shipment_id, bookingResult.awb, bookingResult.tracking_url, id]
-              );
-              console.log(`[iCarry] COD shipment ${bookingResult.shipment_id} booked for order ${id} — AWB: ${bookingResult.awb}`);
-            }
-          } catch (e: any) {
-            console.error('[iCarry] Auto-booking failed (order still recorded):', e.message);
-          }
-        } else {
-          console.warn('[iCarry] pickup_address_id not configured — skipping auto-shipment');
-        }
+      // Automatic iCarry Booking if possible (errors are persisted, not thrown)
+      if (!icarry_shipment_id) {
+        await bookOrderShipment({
+          id, customerName, phone, address, city, zip, state,
+          totalAmount, paymentMethod, items: JSON.stringify(items),
+        });
       }
 
       res.json({ success: true, orderId: id });
@@ -1086,6 +1132,19 @@ async function startServer() {
       await pool.query("UPDATE orders SET status = ? WHERE id = ?", [status, req.params.id]);
       res.json({ success: true });
     } catch (e) { res.status(500).json({ error: 'Update failed' }); }
+  });
+
+  // Manually (re)book an iCarry shipment for an order — returns the real upstream
+  // error so failures can be diagnosed without server-log access.
+  app.post("/api/orders/:id/book_shipment", verifyAdmin, async (req, res) => {
+    try {
+      const [rows]: any = await pool.query("SELECT * FROM orders WHERE id = ?", [req.params.id]);
+      if (rows.length === 0) return res.status(404).json({ success: false, error: "Order not found" });
+      const result = await bookOrderShipment(rows[0]);
+      res.status(result.success ? 200 : 400).json(result);
+    } catch (e: any) {
+      res.status(500).json({ success: false, error: e.message });
+    }
   });
 
   app.post("/api/check_pincode", async (req, res) => {
@@ -1206,7 +1265,12 @@ async function startServer() {
       hmac.update(razorpay_order_id + "|" + razorpay_payment_id);
       const generatedSignature = hmac.digest('hex');
 
-      if (generatedSignature === razorpay_signature) {
+      // Timing-safe comparison to prevent signature-guessing via timing side-channel
+      const sigA = Buffer.from(generatedSignature, 'utf8');
+      const sigB = Buffer.from(razorpay_signature || '', 'utf8');
+      const signatureValid = sigA.length === sigB.length && crypto.timingSafeEqual(sigA, sigB);
+
+      if (signatureValid) {
         // 1. Get order details
         const [orders]: any = await pool.query("SELECT * FROM orders WHERE id = ?", [razorpay_order_id]);
         if (orders.length === 0) throw new Error("Order not found");
@@ -1267,58 +1331,10 @@ async function startServer() {
           connection.release();
         }
 
-        // 7. Trigger iCarry shipment AFTER payment is confirmed (outside transaction)
-        const icarryClient = await getICarryClient();
-        if (icarryClient) {
-          const pickupId = await getSetting('icarry_pickup_address_id');
-          if (pickupId) {
-            try {
-              const orderItems = JSON.parse(order.items);
-              const weightGrams = Math.max(500, orderItems.reduce((sum: number, i: any) => sum + (i.quantity || 1) * 500, 0));
-
-              const bookingResult = await icarryClient.bookShipment({
-                pickup_address_id: pickupId,
-                client_order_id: razorpay_order_id,
-                consignee: {
-                  name: order.customerName,
-                  mobile: (order.phone || '').replace(/[^0-9]/g, '').slice(-10),
-                  address: order.address,
-                  city: order.city,
-                  pincode: order.zip,
-                  state: ICarryClient.getStateCode(order.state),
-                },
-                parcel: {
-                  type: 'Prepaid', // Razorpay = always prepaid
-                  value: Math.max(1, order.totalAmount),
-                  contents: orderItems.map((i: any) => i.name).join(', '),
-                },
-                measurements: {
-                  weight: weightGrams,
-                  length: 15,
-                  breadth: 15,
-                  height: 10,
-                },
-              });
-
-              if (bookingResult?.shipment_id) {
-                await pool.query(
-                  "UPDATE orders SET icarry_shipment_id = ?, icarry_awb = ?, icarry_tracking_url = ?, icarry_status = 'booked', status = 'processing' WHERE id = ?",
-                  [bookingResult.shipment_id, bookingResult.awb, bookingResult.tracking_url, razorpay_order_id]
-                );
-                console.log(`[iCarry] Shipment ${bookingResult.shipment_id} booked for order ${razorpay_order_id} — AWB: ${bookingResult.awb} via ${bookingResult.courier_name}`);
-              } else {
-                console.error('[iCarry] Booking returned no shipment_id:', bookingResult);
-              }
-            } catch (icarryErr: any) {
-              // iCarry failure must NOT roll back the payment success
-              console.error('[iCarry] Shipment booking failed (order is still paid):', icarryErr.message);
-            }
-          } else {
-            console.warn('[iCarry] pickup_address_id not configured — skipping auto-shipment');
-          }
-        } else {
-          console.warn('[iCarry] Client not initialised — ICARRY_USERNAME/ICARRY_KEY missing');
-        }
+        // 7. Trigger iCarry shipment AFTER payment is confirmed (outside transaction).
+        // Failures must NOT roll back the payment — bookOrderShipment persists any
+        // error onto the order row so it's visible/retryable in admin.
+        await bookOrderShipment(order);
 
         res.json({ success: true });
       } else {
