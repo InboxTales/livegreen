@@ -22,6 +22,10 @@ export interface Product {
   subtitle?: string;
   rating_override?: number;
   bought_count?: string;
+  weight_grams?: number;
+  length_cm?: number;
+  breadth_cm?: number;
+  height_cm?: number;
   about_items?: string[];
   purity_profile?: {
     glucose_fructose_ratio: string;

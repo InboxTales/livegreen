@@ -43,6 +43,10 @@ export function ProductsTab() {
                 purity_profile: currentItem.purity_profile || {},
                 product_info: currentItem.product_info || {},
                 rating_override: currentItem.rating_override ? parseFloat(currentItem.rating_override) : null,
+                weight_grams: parseInt(currentItem.weight_grams || "500") || 500,
+                length_cm: parseInt(currentItem.length_cm || "15") || 15,
+                breadth_cm: parseInt(currentItem.breadth_cm || "15") || 15,
+                height_cm: parseInt(currentItem.height_cm || "10") || 10,
             };
 
             if (currentItem.id) {
@@ -168,6 +172,30 @@ export function ProductsTab() {
                             <div className="space-y-4">
                                 <label className="block text-sm font-bold text-gray-700">Stock Available</label>
                                 <Input type="number" value={currentItem?.stock || ""} onChange={(e) => setCurrentItem({ ...currentItem, stock: e.target.value })} required className="h-12 rounded-xl" />
+                            </div>
+                        </div>
+
+                        {/* Shipping details used by iCarry booking */}
+                        <div className="rounded-2xl border border-gray-100 bg-gray-50/50 p-5">
+                            <p className="text-sm font-bold text-gray-700 mb-1">Shipping (per unit) — used for iCarry / Xpressbees booking</p>
+                            <p className="text-xs text-gray-400 mb-4">Weight is multiplied by quantity; the largest box dimensions across items are used.</p>
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                <div>
+                                    <label className="block text-xs font-bold text-gray-600 mb-1">Weight (g)</label>
+                                    <Input type="number" value={currentItem?.weight_grams ?? ""} onChange={(e) => setCurrentItem({ ...currentItem, weight_grams: e.target.value })} placeholder="500" className="h-11 rounded-xl" />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-gray-600 mb-1">Length (cm)</label>
+                                    <Input type="number" value={currentItem?.length_cm ?? ""} onChange={(e) => setCurrentItem({ ...currentItem, length_cm: e.target.value })} placeholder="15" className="h-11 rounded-xl" />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-gray-600 mb-1">Breadth (cm)</label>
+                                    <Input type="number" value={currentItem?.breadth_cm ?? ""} onChange={(e) => setCurrentItem({ ...currentItem, breadth_cm: e.target.value })} placeholder="15" className="h-11 rounded-xl" />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-gray-600 mb-1">Height (cm)</label>
+                                    <Input type="number" value={currentItem?.height_cm ?? ""} onChange={(e) => setCurrentItem({ ...currentItem, height_cm: e.target.value })} placeholder="10" className="h-11 rounded-xl" />
+                                </div>
                             </div>
                         </div>
 

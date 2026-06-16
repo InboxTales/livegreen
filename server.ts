@@ -113,11 +113,58 @@ const bookOrderShipment = async (order: any): Promise<any> => {
 
   try {
     const orderItems = JSON.parse(order.items || '[]');
-    const weightGrams = Math.max(500, orderItems.reduce((sum: number, i: any) => sum + (i.quantity || 1) * 500, 0));
+
+    // Compute parcel weight + dimensions from each product's configured shipping
+    // fields (set in admin). Falls back to 500g / 15x15x10 when not set.
+    let weightGrams = 0;
+    let length = 15, breadth = 15, height = 10;
+    for (const i of orderItems) {
+      const qty = i.quantity || 1;
+      let w = 500, l = 15, b = 15, h = 10;
+      if (i.id) {
+        const [prows]: any = await pool.query(
+          "SELECT weight_grams, length_cm, breadth_cm, height_cm FROM products WHERE id = ?", [i.id]
+        );
+        if (prows.length > 0) {
+          w = Number(prows[0].weight_grams) || 500;
+          l = Number(prows[0].length_cm) || 15;
+          b = Number(prows[0].breadth_cm) || 15;
+          h = Number(prows[0].height_cm) || 10;
+        }
+      }
+      weightGrams += w * qty;
+      // Use the largest box footprint among items; stack height.
+      length = Math.max(length, l);
+      breadth = Math.max(breadth, b);
+      height = Math.max(height, h);
+    }
+    weightGrams = Math.max(500, weightGrams);
+
+    // Pick the preferred iCarry courier (default Xpressbees) from live rates.
+    const preferred = (await getSetting('icarry_preferred_courier')) || 'xpressbees';
+    let courierId: string | number | undefined;
+    const originPincode = (await getSetting('icarry_origin_pincode')) || '400071';
+    try {
+      const rates: any = await icarryClient.getEstimate({
+        origin_pincode: String(originPincode),
+        destination_pincode: String(order.zip),
+        weight: weightGrams, length, breadth, height,
+        shipment_type: order.paymentMethod === 'cod' ? 'C' : 'P',
+        shipment_value: Math.max(1, order.totalAmount),
+      });
+      if (Array.isArray(rates)) {
+        const match = rates.find((r: any) => String(r.courier_name || '').toLowerCase().includes(preferred.toLowerCase()));
+        if (match) courierId = match.courier_id;
+        else console.warn(`[iCarry] Preferred courier "${preferred}" not in rates; letting iCarry auto-assign.`);
+      }
+    } catch (e: any) {
+      console.warn('[iCarry] Estimate for courier selection failed; auto-assigning:', e.message);
+    }
 
     const bookingResult = await icarryClient.bookShipment({
       pickup_address_id: pickupId,
       client_order_id: order.id,
+      courier_id: courierId,
       consignee: {
         name: order.customerName,
         mobile: String(order.phone || '').replace(/[^0-9]/g, '').slice(-10),
@@ -131,7 +178,7 @@ const bookOrderShipment = async (order: any): Promise<any> => {
         value: Math.max(1, order.totalAmount),
         contents: orderItems.map((i: any) => i.name).join(', '),
       },
-      measurements: { weight: weightGrams, length: 15, breadth: 15, height: 10 },
+      measurements: { weight: weightGrams, length, breadth, height },
     });
 
     if (bookingResult?.shipment_id) {
@@ -179,7 +226,11 @@ async function initDB() {
       bought_count VARCHAR(255),
       about_items TEXT,
       purity_profile TEXT,
-      product_info TEXT
+      product_info TEXT,
+      weight_grams INT DEFAULT 500,
+      length_cm INT DEFAULT 15,
+      breadth_cm INT DEFAULT 15,
+      height_cm INT DEFAULT 10
     );
   `);
 
@@ -384,7 +435,11 @@ async function initDB() {
     { name: 'about_items', type: 'TEXT' },
     { name: 'purity_profile', type: 'TEXT' },
     { name: 'product_info', type: 'TEXT' },
-    { name: 'ribbon', type: 'TEXT' }
+    { name: 'ribbon', type: 'TEXT' },
+    { name: 'weight_grams', type: 'INT DEFAULT 500' },
+    { name: 'length_cm', type: 'INT DEFAULT 15' },
+    { name: 'breadth_cm', type: 'INT DEFAULT 15' },
+    { name: 'height_cm', type: 'INT DEFAULT 10' }
   ];
 
   for (const col of expectedColumns) {
@@ -444,6 +499,8 @@ async function initDB() {
     ['icarry_key', process.env.ICARRY_KEY || ''],
     ['icarry_base_url', 'https://www.icarry.in'],
     ['icarry_pickup_address_id', process.env.ICARRY_PICKUP_ADDRESS_ID || '84128'],
+    ['icarry_origin_pincode', process.env.ICARRY_ORIGIN_PINCODE || '400071'],
+    ['icarry_preferred_courier', process.env.ICARRY_PREFERRED_COURIER || 'xpressbees'],
     ['hf_api_key', process.env.HF_API_KEY || '']
   ];
 
@@ -853,15 +910,17 @@ async function startServer() {
   });
 
   app.post("/api/products", verifyAdmin, async (req, res) => {
-    const { 
+    const {
       name, price, originalPrice, description, image, features, category, stock, seoTitle, seoDescription, seoKeywords,
-      subtitle, rating_override, bought_count, about_items, purity_profile, product_info, ribbon
+      subtitle, rating_override, bought_count, about_items, purity_profile, product_info, ribbon,
+      weight_grams, length_cm, breadth_cm, height_cm
     } = req.body;
     const [info]: any = await pool.query(
-      "INSERT INTO products (name, price, originalPrice, description, image, features, category, stock, seoTitle, seoDescription, seoKeywords, subtitle, rating_override, bought_count, about_items, purity_profile, product_info, ribbon) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO products (name, price, originalPrice, description, image, features, category, stock, seoTitle, seoDescription, seoKeywords, subtitle, rating_override, bought_count, about_items, purity_profile, product_info, ribbon, weight_grams, length_cm, breadth_cm, height_cm) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       [
         name, price, originalPrice, description, image, JSON.stringify(features || []), category, stock ?? 100, seoTitle, seoDescription, seoKeywords,
-        subtitle, rating_override, bought_count, JSON.stringify(about_items || []), JSON.stringify(purity_profile || {}), JSON.stringify(product_info || {}), ribbon
+        subtitle, rating_override, bought_count, JSON.stringify(about_items || []), JSON.stringify(purity_profile || {}), JSON.stringify(product_info || {}), ribbon,
+        weight_grams || 500, length_cm || 15, breadth_cm || 15, height_cm || 10
       ]
     );
     const newId = info.insertId || info.lastID;
@@ -870,16 +929,17 @@ async function startServer() {
   });
 
   app.put("/api/products/:id", verifyAdmin, async (req, res) => {
-    const { 
+    const {
       name, price, originalPrice, description, image, features, category, stock, seoTitle, seoDescription, seoKeywords,
-      subtitle, rating_override, bought_count, about_items, purity_profile, product_info, ribbon
+      subtitle, rating_override, bought_count, about_items, purity_profile, product_info, ribbon,
+      weight_grams, length_cm, breadth_cm, height_cm
     } = req.body;
     await pool.query(
-      "UPDATE products SET name = ?, price = ?, originalPrice = ?, description = ?, image = ?, features = ?, category = ?, stock = ?, seoTitle = ?, seoDescription = ?, seoKeywords = ?, subtitle = ?, rating_override = ?, bought_count = ?, about_items = ?, purity_profile = ?, product_info = ?, ribbon = ? WHERE id = ?",
+      "UPDATE products SET name = ?, price = ?, originalPrice = ?, description = ?, image = ?, features = ?, category = ?, stock = ?, seoTitle = ?, seoDescription = ?, seoKeywords = ?, subtitle = ?, rating_override = ?, bought_count = ?, about_items = ?, purity_profile = ?, product_info = ?, ribbon = ?, weight_grams = ?, length_cm = ?, breadth_cm = ?, height_cm = ? WHERE id = ?",
       [
         name, price, originalPrice, description, image, JSON.stringify(features || []), category, stock ?? 100, seoTitle, seoDescription, seoKeywords,
         subtitle, rating_override, bought_count, JSON.stringify(about_items || []), JSON.stringify(purity_profile || {}), JSON.stringify(product_info || {}),
-        ribbon, req.params.id
+        ribbon, weight_grams || 500, length_cm || 15, breadth_cm || 15, height_cm || 10, req.params.id
       ]
     );
     await logAudit((req as any).user.username, 'UPDATE_PRODUCT', 'product', req.params.id, `Updated ${name}`, req.ip);

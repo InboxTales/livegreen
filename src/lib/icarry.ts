@@ -118,6 +118,7 @@ export class ICarryClient {
   public async bookShipment(params: {
     pickup_address_id: string | number;
     client_order_id: string;
+    courier_id?: string | number;   // select a specific iCarry courier (e.g. Xpressbees)
     consignee: {
       name: string;
       mobile: string;
@@ -170,6 +171,11 @@ export class ICarryClient {
         unit: params.measurements.unit || 'cm',
       },
     };
+
+    // Pin the shipment to a specific iCarry courier (e.g. Xpressbees) when provided.
+    if (params.courier_id !== undefined && params.courier_id !== null && params.courier_id !== '') {
+      body.courier_id = params.courier_id;
+    }
 
     try {
       const data = await this.post(endpoint, body);

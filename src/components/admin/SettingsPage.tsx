@@ -169,6 +169,39 @@ export function SettingsPage() {
                             </div>
                         </div>
 
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Origin Pincode (Pickup PIN)</label>
+                            <div className="flex gap-2">
+                                <input
+                                    type="text"
+                                    value={settings['icarry_origin_pincode'] || ''}
+                                    onChange={(e) => handleChange('icarry_origin_pincode', e.target.value)}
+                                    placeholder="e.g. 400071"
+                                    className="flex-1 p-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#3A8E3C]/20 focus:border-[#3A8E3C] outline-none"
+                                />
+                                <button onClick={() => handleSave('icarry_origin_pincode', settings['icarry_origin_pincode'])} disabled={saving} className="px-4 py-2 bg-[#F5FFF5] text-[#3A8E3C] border border-[#3A8E3C]/20 hover:bg-[#E8F5E9] rounded-lg font-medium transition-colors flex items-center gap-2 disabled:opacity-50">
+                                    <Save className="h-4 w-4" /> Save
+                                </button>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Preferred Courier (e.g. Xpressbees)</label>
+                            <div className="flex gap-2">
+                                <input
+                                    type="text"
+                                    value={settings['icarry_preferred_courier'] || ''}
+                                    onChange={(e) => handleChange('icarry_preferred_courier', e.target.value)}
+                                    placeholder="xpressbees"
+                                    className="flex-1 p-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#3A8E3C]/20 focus:border-[#3A8E3C] outline-none"
+                                />
+                                <button onClick={() => handleSave('icarry_preferred_courier', settings['icarry_preferred_courier'])} disabled={saving} className="px-4 py-2 bg-[#F5FFF5] text-[#3A8E3C] border border-[#3A8E3C]/20 hover:bg-[#E8F5E9] rounded-lg font-medium transition-colors flex items-center gap-2 disabled:opacity-50">
+                                    <Save className="h-4 w-4" /> Save
+                                </button>
+                            </div>
+                            <p className="text-xs text-gray-400 mt-1">Bookings pick this courier from iCarry's rates. Leave as "xpressbees" to ship via Xpressbees. Blank = iCarry auto-assigns.</p>
+                        </div>
+
                         <div className="p-4 bg-blue-50 rounded-xl border border-blue-100 flex items-start gap-3">
                             <AlertCircle className="h-5 w-5 text-blue-600 mt-0.5" />
                             <div className="text-xs text-blue-700">
