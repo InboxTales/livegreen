@@ -201,6 +201,15 @@ export function OrdersTab() {
                                                                                         Track Package &rarr;
                                                                                     </a>
                                                                                 )}
+                                                                                <div className="mt-3 pt-3 border-t border-green-100">
+                                                                                    <button
+                                                                                        onClick={() => { if (confirm("Cancel the current shipment and re-book with the latest product weight, dimensions and courier?")) handleBookShipment(order.id); }}
+                                                                                        disabled={bookingId === order.id}
+                                                                                        className="px-3 py-1.5 text-xs font-bold rounded-lg border border-[#1B5E20] text-[#1B5E20] hover:bg-[#1B5E20] hover:text-white disabled:opacity-50 transition"
+                                                                                    >
+                                                                                        {bookingId === order.id ? "Re-booking…" : "Re-book (apply updated details)"}
+                                                                                    </button>
+                                                                                </div>
                                                                             </div>
                                                                         )}
                                                                         {!order.icarry_shipment_id && (

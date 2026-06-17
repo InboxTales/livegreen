@@ -112,6 +112,21 @@ const bookOrderShipment = async (order: any): Promise<any> => {
   }
 
   try {
+    // If a shipment already exists, cancel it first so a re-book applies the
+    // latest product weight/dimensions and courier selection.
+    if (order.icarry_shipment_id) {
+      try {
+        await icarryClient.cancelShipment(String(order.icarry_shipment_id));
+        console.log(`[iCarry] Cancelled existing shipment ${order.icarry_shipment_id} for re-book of order ${order.id}`);
+      } catch (cancelErr: any) {
+        console.warn(`[iCarry] Could not cancel existing shipment ${order.icarry_shipment_id}:`, cancelErr.message);
+      }
+      await pool.query(
+        "UPDATE orders SET icarry_shipment_id = NULL, icarry_awb = NULL, icarry_tracking_url = NULL, icarry_status = NULL WHERE id = ?",
+        [order.id]
+      );
+    }
+
     const orderItems = JSON.parse(order.items || '[]');
 
     // Compute parcel weight + dimensions from each product's configured shipping
