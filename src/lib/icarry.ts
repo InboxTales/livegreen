@@ -186,7 +186,9 @@ export class ICarryClient {
     }
 
     try {
+      console.log('[iCarry] add_shipment request:', JSON.stringify(this.flattenToBrackets(body)));
       const data = await this.post(endpoint, body);
+      console.log('[iCarry] add_shipment response:', JSON.stringify(data));
 
       if (data?.shipment_id) {
         return {
