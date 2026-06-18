@@ -163,14 +163,21 @@ export class ICarryClient {
         value: params.parcel.value,
         contents: params.parcel.contents.substring(0, 255),
       },
-      // iCarry expects weight/dimensions as FLAT top-level params (same names the
-      // working estimate endpoint uses) — NOT nested under measurements[]. Sending
-      // them nested made iCarry ignore them and fall back to default dimensions.
+      // Weight + dimensions as FLAT top-level params (the working estimate endpoint
+      // uses flat `weight/length/breadth/height`). Without official add_shipment docs
+      // we send every common alias so whichever field iCarry reads receives the real
+      // value; unknown keys are ignored. This stops iCarry defaulting to 500g.
       weight: params.measurements.weight,
+      dead_weight: params.measurements.weight,
+      actual_weight: params.measurements.weight,
+      package_weight: params.measurements.weight,
       length: params.measurements.length,
       breadth: params.measurements.breadth,
       height: params.measurements.height,
-      // Keep the nested form too, harmlessly, in case a courier reads it.
+      package_length: params.measurements.length,
+      package_breadth: params.measurements.breadth,
+      package_height: params.measurements.height,
+      // Nested form too, harmlessly, in case a courier reads it.
       measurements: {
         weight: params.measurements.weight,
         length: params.measurements.length,
