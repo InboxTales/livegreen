@@ -488,7 +488,7 @@ export async function updateOrderStatus(id: string, status: string) {
   });
 }
 
-export async function bookOrderShipment(id: string): Promise<{ success: boolean; error?: string; awb?: string; shipment_id?: string }> {
+export async function bookOrderShipment(id: string): Promise<{ success: boolean; error?: string; awb?: string; shipment_id?: string; courier_name?: string; sentWeight?: number; sentDimensions?: string }> {
   return fetchAuth(`/api/orders/${id}/book_shipment`, { method: "POST" });
 }
 

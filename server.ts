@@ -201,8 +201,8 @@ const bookOrderShipment = async (order: any): Promise<any> => {
         "UPDATE orders SET icarry_shipment_id = ?, icarry_awb = ?, icarry_tracking_url = ?, icarry_status = 'booked', icarry_error = NULL, status = 'processing' WHERE id = ?",
         [bookingResult.shipment_id, bookingResult.awb, bookingResult.tracking_url, order.id]
       );
-      console.log(`[iCarry] Shipment ${bookingResult.shipment_id} booked for order ${order.id} — AWB: ${bookingResult.awb} via ${bookingResult.courier_name}`);
-      return { success: true, ...bookingResult };
+      console.log(`[iCarry] Shipment ${bookingResult.shipment_id} booked for order ${order.id} — AWB: ${bookingResult.awb} via ${bookingResult.courier_name} — sent weight=${weightGrams}g dims=${length}x${breadth}x${height}cm courier_id=${courierId ?? 'auto'}`);
+      return { success: true, sentWeight: weightGrams, sentDimensions: `${length}x${breadth}x${height}`, ...bookingResult };
     }
 
     const error = 'Booking returned no shipment_id';

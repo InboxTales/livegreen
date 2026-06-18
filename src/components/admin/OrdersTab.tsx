@@ -16,6 +16,7 @@ export function OrdersTab() {
         try {
             const res = await bookOrderShipment(id);
             if (!res.success) alert(`iCarry booking failed:\n\n${res.error}`);
+            else alert(`Shipment booked via ${res.courier_name || 'iCarry'}\nAWB: ${res.awb || '—'}\nSent weight: ${res.sentWeight}g\nDimensions: ${res.sentDimensions} cm`);
             await loadOrders();
         } catch (e: any) {
             alert(`iCarry booking failed:\n\n${e.message}`);
