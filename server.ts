@@ -96,6 +96,9 @@ const getICarryClient = async () => {
 // Book an iCarry shipment for an order row. Persists success fields or the error
 // string onto the order so failures are visible in the admin UI / DB.
 // Returns { success, ...details } or { success: false, error }.
+// Book an iCarry shipment for an order row. Persists success fields or the error
+// string onto the order so failures are visible in the admin UI / DB.
+// Returns { success, ...details } or { success: false, error }.
 const bookOrderShipment = async (order: any): Promise<any> => {
   const icarryClient = await getICarryClient();
   if (!icarryClient) {
@@ -115,11 +118,16 @@ const bookOrderShipment = async (order: any): Promise<any> => {
     // If a shipment already exists, cancel it first so a re-book applies the
     // latest product weight/dimensions and courier selection.
     if (order.icarry_shipment_id) {
-      try {
-        await icarryClient.cancelShipment(String(order.icarry_shipment_id));
-        console.log(`[iCarry] Cancelled existing shipment ${order.icarry_shipment_id} for re-book of order ${order.id}`);
-      } catch (cancelErr: any) {
-        console.warn(`[iCarry] Could not cancel existing shipment ${order.icarry_shipment_id}:`, cancelErr.message);
+      const sids = String(order.icarry_shipment_id).split(',').map((s: string) => s.trim());
+      for (const sid of sids) {
+        if (sid) {
+          try {
+            await icarryClient.cancelShipment(sid);
+            console.log(`[iCarry] Cancelled existing shipment ${sid} for re-book of order ${order.id}`);
+          } catch (cancelErr: any) {
+            console.warn(`[iCarry] Could not cancel existing shipment ${sid}:`, cancelErr.message);
+          }
+        }
       }
       await pool.query(
         "UPDATE orders SET icarry_shipment_id = NULL, icarry_awb = NULL, icarry_tracking_url = NULL, icarry_status = NULL WHERE id = ?",
@@ -129,94 +137,203 @@ const bookOrderShipment = async (order: any): Promise<any> => {
 
     const orderItems = JSON.parse(order.items || '[]');
 
-    // Compute parcel weight + dimensions from each product's configured shipping
-    // fields (set in admin). Falls back to 500g / 15x15x10 when not set.
-    let weightGrams = 0;
-    let length = 15, breadth = 15, height = 10;
-    for (const i of orderItems) {
-      const qty = i.quantity || 1;
+    // Expand items by quantity into individual units
+    const flatUnits: any[] = [];
+    for (const item of orderItems) {
+      const qty = item.quantity || 1;
+      for (let q = 0; q < qty; q++) {
+        flatUnits.push({
+          ...item,
+          quantity: 1
+        });
+      }
+    }
+
+    if (flatUnits.length === 0) {
+      const error = 'Order has no items to book';
+      await pool.query("UPDATE orders SET icarry_error = ? WHERE id = ?", [error, order.id]);
+      return { success: false, error };
+    }
+
+    // Split the totalAmount across units proportionally/equally
+    const totalUnits = flatUnits.length;
+    const unitValues: number[] = [];
+    let remainingAmount = order.totalAmount;
+    for (let i = 0; i < totalUnits; i++) {
+      if (i === totalUnits - 1) {
+        unitValues.push(remainingAmount);
+      } else {
+        const val = Math.round(order.totalAmount / totalUnits);
+        unitValues.push(val);
+        remainingAmount -= val;
+      }
+    }
+
+    const preferred = await getSetting('icarry_preferred_courier');
+    const originPincode = (await getSetting('icarry_origin_pincode')) || '400071';
+
+    const sanitizePincode = (pc: any) => String(pc || '').replace(/[^0-9]/g, '');
+    const destPincodeClean = sanitizePincode(order.zip);
+    const originPincodeClean = sanitizePincode(originPincode);
+
+    const bookedShipments: any[] = [];
+    const errors: string[] = [];
+
+    for (let index = 0; index < flatUnits.length; index++) {
+      const unit = flatUnits[index];
+      const shipmentValue = unitValues[index];
+
+      // Compute weight + dimensions for this unit
       let w = 500, l = 15, b = 15, h = 10;
-      if (i.id) {
+      if (unit.id) {
         const [prows]: any = await pool.query(
-          "SELECT weight_grams, length_cm, breadth_cm, height_cm FROM products WHERE id = ?", [i.id]
+          "SELECT weight_grams, length_cm, breadth_cm, height_cm FROM products WHERE id = ?", [unit.id]
         );
         if (prows.length > 0) {
-          w = Number(prows[0].weight_grams) || 500;
-          l = Number(prows[0].length_cm) || 15;
-          b = Number(prows[0].breadth_cm) || 15;
-          h = Number(prows[0].height_cm) || 10;
+          w = prows[0].weight_grams !== null && prows[0].weight_grams !== undefined ? Number(prows[0].weight_grams) : 500;
+          l = prows[0].length_cm !== null && prows[0].length_cm !== undefined ? Number(prows[0].length_cm) : 15;
+          b = prows[0].breadth_cm !== null && prows[0].breadth_cm !== undefined ? Number(prows[0].breadth_cm) : 15;
+          h = prows[0].height_cm !== null && prows[0].height_cm !== undefined ? Number(prows[0].height_cm) : 10;
         }
       }
-      weightGrams += w * qty;
-      // Use the largest box footprint among items; stack height.
-      length = Math.max(length, l);
-      breadth = Math.max(breadth, b);
-      height = Math.max(height, h);
-    }
-    weightGrams = Math.max(500, weightGrams);
+      if (w <= 0) w = 500;
+      if (l <= 0) l = 15;
+      if (b <= 0) b = 15;
+      if (h <= 0) h = 10;
 
-    // Pick the preferred iCarry courier (default Xpressbees) from live rates.
-    const preferred = (await getSetting('icarry_preferred_courier')) || 'xpressbees';
-    let courierId: string | number | undefined;
-    const originPincode = (await getSetting('icarry_origin_pincode')) || '400071';
-    try {
-      const rates: any = await icarryClient.getEstimate({
-        origin_pincode: String(originPincode),
-        destination_pincode: String(order.zip),
-        weight: weightGrams, length, breadth, height,
-        shipment_type: order.paymentMethod === 'cod' ? 'C' : 'P',
-        shipment_value: Math.max(1, order.totalAmount),
-      });
-      if (Array.isArray(rates)) {
-        const match = rates.find((r: any) => String(r.courier_name || '').toLowerCase().includes(preferred.toLowerCase()));
-        if (match) courierId = match.courier_id;
-        else console.warn(`[iCarry] Preferred courier "${preferred}" not in rates; letting iCarry auto-assign.`);
+      // Fetch estimate rates to pick either the preferred courier or the cheapest courier
+      let courierId: string | number | undefined;
+      let bookingMode: 'surface' | 'air' = 'surface';
+      try {
+        const rates: any = await icarryClient.getEstimate({
+          origin_pincode: originPincodeClean,
+          destination_pincode: destPincodeClean,
+          weight: w, length: l, breadth: b, height: h,
+          shipment_type: order.paymentMethod === 'cod' ? 'C' : 'P',
+          shipment_value: Math.max(1, shipmentValue),
+        });
+        console.log(`[iCarry] Estimate response for order ${order.id} package ${index + 1}:`, JSON.stringify(rates));
+
+        let ratesList: any[] = [];
+        if (Array.isArray(rates)) {
+          ratesList = rates;
+        } else if (rates && Array.isArray(rates.estimate)) {
+          ratesList = rates.estimate;
+        } else if (rates && rates.estimate && typeof rates.estimate === 'object') {
+          ratesList = Object.values(rates.estimate);
+        }
+
+        if (ratesList.length > 0) {
+          const validRates = ratesList.filter(r => r && r.courier_id && (r.courier_cost !== undefined || r.cost !== undefined));
+          if (validRates.length > 0) {
+            let selectedCourier: any = null;
+            if (preferred && preferred.trim() !== '' && preferred.toLowerCase() !== 'cheapest') {
+              selectedCourier = validRates.find((r: any) =>
+                String(r.courier_name || '').toLowerCase().includes(preferred.toLowerCase()) ||
+                String(r.courier_group_name || '').toLowerCase().includes(preferred.toLowerCase())
+              );
+            }
+            if (!selectedCourier) {
+              selectedCourier = validRates.reduce((cheapest: any, current: any) => {
+                const cheapestCost = Number(cheapest.courier_cost) || Number(cheapest.cost) || Infinity;
+                const currentCost = Number(current.courier_cost) || Number(current.cost) || Infinity;
+                return currentCost < cheapestCost ? current : cheapest;
+              }, validRates[0]);
+            }
+            if (selectedCourier) {
+              courierId = parseInt(String(selectedCourier.courier_id), 10) || selectedCourier.courier_id;
+              console.log(`[iCarry] Selected cheapest courier ${selectedCourier.courier_name || selectedCourier.courier_group_name} (ID: ${courierId}) for order ${order.id} package ${index + 1}`);
+              
+              const courierName = String(selectedCourier.courier_name || selectedCourier.courier_group_name || '').toLowerCase();
+              if (courierName.includes('air') || courierName.includes('express') || courierName.includes('flight')) {
+                bookingMode = 'air';
+              }
+            }
+          }
+        }
+      } catch (e: any) {
+        console.warn(`[iCarry] Estimate for courier selection failed for package ${index + 1}:`, e.message);
       }
-    } catch (e: any) {
-      console.warn('[iCarry] Estimate for courier selection failed; auto-assigning:', e.message);
+
+      const clientOrderId = flatUnits.length > 1 ? `${order.id}-${index + 1}` : order.id;
+
+      try {
+        const bookingResult = await icarryClient.bookShipment({
+          pickup_address_id: pickupId,
+          client_order_id: clientOrderId,
+          courier_id: courierId,
+          consignee: {
+            name: order.customerName,
+            mobile: String(order.phone || '').replace(/[^0-9]/g, '').slice(-10),
+            address: order.address,
+            city: order.city,
+            pincode: order.zip,
+            state: ICarryClient.getStateCode(order.state),
+          },
+          parcel: {
+            type: order.paymentMethod === 'cod' ? 'COD' : 'Prepaid',
+            value: Math.max(1, shipmentValue),
+            contents: `${unit.name}`.substring(0, 255),
+          },
+          measurements: { weight: w, length: l, breadth: b, height: h },
+          mode: bookingMode,
+        });
+
+        if (bookingResult?.shipment_id) {
+          bookedShipments.push({
+            ...bookingResult,
+            sentWeight: w,
+            sentDimensions: `${l}x${b}x${h}`
+          });
+        } else {
+          errors.push(`Package ${index + 1} booking returned no shipment_id`);
+        }
+      } catch (err: any) {
+        const detail = err?.response?.data
+          ? (typeof err.response.data === 'string' ? err.response.data : JSON.stringify(err.response.data))
+          : err.message;
+        errors.push(`Package ${index + 1} booking failed: ${detail}`);
+      }
     }
 
-    const bookingResult = await icarryClient.bookShipment({
-      pickup_address_id: pickupId,
-      client_order_id: order.id,
-      courier_id: courierId,
-      consignee: {
-        name: order.customerName,
-        mobile: String(order.phone || '').replace(/[^0-9]/g, '').slice(-10),
-        address: order.address,
-        city: order.city,
-        pincode: order.zip,
-        state: ICarryClient.getStateCode(order.state),
-      },
-      parcel: {
-        type: order.paymentMethod === 'cod' ? 'COD' : 'Prepaid',
-        value: Math.max(1, order.totalAmount),
-        contents: orderItems.map((i: any) => i.name).join(', '),
-      },
-      measurements: { weight: weightGrams, length, breadth, height },
-    });
+    if (bookedShipments.length > 0) {
+      const shipmentIds = bookedShipments.map(s => s.shipment_id).join(', ');
+      const awbs = bookedShipments.map(s => s.awb || '—').join(', ');
+      const trackingUrls = bookedShipments.map(s => s.tracking_url || '—').join(', ');
+      const courierNames = bookedShipments.map(s => s.courier_name || 'iCarry').join(', ');
+      const status = 'booked';
+      const errorMsg = errors.length > 0 ? `Partial booking errors: ${errors.join('; ')}` : null;
 
-    if (bookingResult?.shipment_id) {
       await pool.query(
-        "UPDATE orders SET icarry_shipment_id = ?, icarry_awb = ?, icarry_tracking_url = ?, icarry_status = 'booked', icarry_error = NULL, status = 'processing' WHERE id = ?",
-        [bookingResult.shipment_id, bookingResult.awb, bookingResult.tracking_url, order.id]
+        "UPDATE orders SET icarry_shipment_id = ?, icarry_awb = ?, icarry_tracking_url = ?, icarry_status = ?, icarry_error = ?, status = 'processing' WHERE id = ?",
+        [shipmentIds, awbs, trackingUrls, status, errorMsg, order.id]
       );
-      console.log(`[iCarry] Shipment ${bookingResult.shipment_id} booked for order ${order.id} — AWB: ${bookingResult.awb} via ${bookingResult.courier_name} — sent weight=${weightGrams}g dims=${length}x${breadth}x${height}cm courier_id=${courierId ?? 'auto'}`);
-      return { success: true, sentWeight: weightGrams, sentDimensions: `${length}x${breadth}x${height}`, ...bookingResult };
-    }
 
-    const error = 'Booking returned no shipment_id';
-    await pool.query("UPDATE orders SET icarry_error = ? WHERE id = ?", [error, order.id]);
-    console.error('[iCarry] Booking returned no shipment_id:', bookingResult);
-    return { success: false, error, raw: bookingResult };
+      const totalWeight = bookedShipments.reduce((acc, s) => acc + s.sentWeight, 0);
+      const dimensionsStr = bookedShipments.map(s => s.sentDimensions).join(', ');
+
+      console.log(`[iCarry] Booked ${bookedShipments.length} packages for order ${order.id}. IDs: ${shipmentIds}`);
+      return {
+        success: true,
+        sentWeight: totalWeight,
+        sentDimensions: dimensionsStr,
+        courier_name: courierNames,
+        awb: awbs,
+        shipment_id: shipmentIds,
+        tracking_url: trackingUrls
+      };
+    } else {
+      const error = `iCarry booking failed: ${errors.join('; ')}`;
+      await pool.query("UPDATE orders SET icarry_error = ? WHERE id = ?", [error, order.id]);
+      return { success: false, error };
+    }
   } catch (icarryErr: any) {
-    // Capture the real upstream error (axios response body if present) for diagnosis.
     const detail = icarryErr?.response?.data
       ? (typeof icarryErr.response.data === 'string' ? icarryErr.response.data : JSON.stringify(icarryErr.response.data))
       : icarryErr.message;
     const error = `iCarry booking failed: ${detail}`;
     await pool.query("UPDATE orders SET icarry_error = ? WHERE id = ?", [error, order.id]);
-    console.error('[iCarry] Shipment booking failed (order is still paid):', error);
+    console.error('[iCarry] Shipment booking failed:', error);
     return { success: false, error };
   }
 };
@@ -515,12 +632,35 @@ async function initDB() {
     ['icarry_base_url', 'https://www.icarry.in'],
     ['icarry_pickup_address_id', process.env.ICARRY_PICKUP_ADDRESS_ID || '84128'],
     ['icarry_origin_pincode', process.env.ICARRY_ORIGIN_PINCODE || '400071'],
-    ['icarry_preferred_courier', process.env.ICARRY_PREFERRED_COURIER || 'xpressbees'],
+    ['icarry_preferred_courier', process.env.ICARRY_PREFERRED_COURIER || ''],
     ['hf_api_key', process.env.HF_API_KEY || '']
   ];
 
   for (const [key, val] of defaultSettings) {
     await pool.query("INSERT INTO app_settings (key_name, key_value) VALUES ($1, $2) ON CONFLICT (key_name) DO NOTHING", [key, val]);
+  }
+
+  // Sync credentials from .env to database so updating .env automatically propagates
+  if (process.env.ICARRY_KEY) {
+    await pool.query("UPDATE app_settings SET key_value = $1 WHERE key_name = 'icarry_key'", [process.env.ICARRY_KEY]);
+  }
+  if (process.env.ICARRY_USERNAME) {
+    await pool.query("UPDATE app_settings SET key_value = $1 WHERE key_name = 'icarry_username'", [process.env.ICARRY_USERNAME]);
+  }
+  if (process.env.RAZORPAY_KEY) {
+    await pool.query("UPDATE app_settings SET key_value = $1 WHERE key_name = 'razorpay_key'", [process.env.RAZORPAY_KEY]);
+  }
+  if (process.env.RAZORPAY_SECRET) {
+    await pool.query("UPDATE app_settings SET key_value = $1 WHERE key_name = 'razorpay_secret'", [process.env.RAZORPAY_SECRET]);
+  }
+  if (process.env.HF_API_KEY) {
+    await pool.query("UPDATE app_settings SET key_value = $1 WHERE key_name = 'hf_api_key'", [process.env.HF_API_KEY]);
+  }
+
+  // If preferred courier is still 'xpressbees' (default from previous seeds), clear it so it defaults to cheapest
+  const [prefCourier]: any = await pool.query("SELECT key_value FROM app_settings WHERE key_name = 'icarry_preferred_courier'");
+  if (prefCourier.length > 0 && prefCourier[0].key_value === 'xpressbees' && !process.env.ICARRY_PREFERRED_COURIER) {
+    await pool.query("UPDATE app_settings SET key_value = '' WHERE key_name = 'icarry_preferred_courier'");
   }
 
   // Ensure pickup address ID is always up to date from env (won't override if already customised via admin UI)
@@ -547,16 +687,33 @@ async function initDB() {
   const [prodCnt]: any = await pool.query("SELECT count(*) as count FROM products");
   if (Number(prodCnt[0].count) === 0) {
     const seedProds = [
-      ["Live Green Raw Honey (500g)", 599, 799, "Our signature honey is harvested from the deep forests of Uttarakhand, ensuring a rich taste and high nutritional value. It's never heated or processed, preserving all the natural enzymes and antioxidants.", "https://images.unsplash.com/photo-1587049352846-4a222e784d38?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80", JSON.stringify(["100% Raw & Unprocessed", "Rich in Antioxidants", "Boosts Immunity", "Sourced from Sustainable Farms"]), "Raw Honey"],
-      ["Wild Forest Honey (350g)", 449, 599, "Collected from the wild forests of the Western Ghats, this dark amber honey has a bold, complex flavor profile with notes of wild herbs and flowers. Perfect for those who love intense flavors.", "https://images.unsplash.com/photo-1558642452-9d2a7deb7f62?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80", JSON.stringify(["Wild Harvested", "Dark Amber Color", "Complex Flavor Profile", "High Mineral Content"]), "Wild Honey"],
-      ["Acacia Honey (250g)", 399, 549, "Light, golden, and delicately sweet — our Acacia honey is one of the purest varieties available. It stays liquid longer than most honeys and has a mild, floral taste that pairs beautifully with cheese and fruits.", "https://images.unsplash.com/photo-1612438214708-f428a707dd4e?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80", JSON.stringify(["Light & Golden", "Slow Crystallization", "Mild Floral Taste", "Pairs with Cheese"]), "Acacia Honey"],
-      ["Multiflora Honey (1kg)", 999, 1299, "Our premium Multiflora honey is sourced from apiaries surrounded by diverse wildflowers. This family-size jar is perfect for daily use — in your tea, on toast, or as a natural sweetener in recipes.", "/images/multiflora-honey.png", JSON.stringify(["Family Size 1kg", "Multi-Floral Blend", "Daily Use", "Rich in Enzymes"]), "Multiflora"],
-      ["Honeycomb Box (200g)", 699, 899, "Experience honey in its most natural form — straight from the comb. Our honeycomb is hand-cut from frames and sealed in food-safe boxes. Chew it, spread it on warm bread, or pair it with cheese for a gourmet snack.", "/images/pollen-honey.png", JSON.stringify(["Raw Honeycomb", "Hand-Cut Pieces", "Gourmet Snack", "Contains Beeswax & Propolis"]), "Honeycomb"],
-      ["Jamun Honey (500g)", 649, 849, "Harvested during the Jamun (Indian Blackberry) flowering season, this honey has a rich, slightly tangy flavor and a dark color. Traditionally used in Ayurveda, it's believed to support blood sugar management.", "/images/jamun-honey.png", JSON.stringify(["Seasonal Harvest", "Ayurvedic Properties", "Low Glycemic Index", "Rich Dark Color"]), "Specialty"]
+      ["Live Green Raw Honey (500g)", 599, 799, "Our signature honey is harvested from the deep forests of Uttarakhand, ensuring a rich taste and high nutritional value. It's never heated or processed, preserving all the natural enzymes and antioxidants.", "https://images.unsplash.com/photo-1587049352846-4a222e784d38?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80", JSON.stringify(["100% Raw & Unprocessed", "Rich in Antioxidants", "Boosts Immunity", "Sourced from Sustainable Farms"]), "Raw Honey", 750, 12, 12, 16],
+      ["Wild Forest Honey (350g)", 449, 599, "Collected from the wild forests of the Western Ghats, this dark amber honey has a bold, complex flavor profile with notes of wild herbs and flowers. Perfect for those who love intense flavors.", "https://images.unsplash.com/photo-1558642452-9d2a7deb7f62?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80", JSON.stringify(["Wild Harvested", "Dark Amber Color", "Complex Flavor Profile", "High Mineral Content"]), "Wild Honey", 550, 10, 10, 14],
+      ["Acacia Honey (250g)", 399, 549, "Light, golden, and delicately sweet — our Acacia honey is one of the purest varieties available. It stays liquid longer than most honeys and has a mild, floral taste that pairs beautifully with cheese and fruits.", "https://images.unsplash.com/photo-1612438214708-f428a707dd4e?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80", JSON.stringify(["Light & Golden", "Slow Crystallization", "Mild Floral Taste", "Pairs with Cheese"]), "Acacia Honey", 400, 9, 9, 12],
+      ["Multiflora Honey (1kg)", 999, 1299, "Our premium Multiflora honey is sourced from apiaries surrounded by diverse wildflowers. This family-size jar is perfect for daily use — in your tea, on toast, or as a natural sweetener in recipes.", "/images/multiflora-honey.png", JSON.stringify(["Family Size 1kg", "Multi-Floral Blend", "Daily Use", "Rich in Enzymes"]), "Multiflora", 1300, 15, 15, 20],
+      ["Honeycomb Box (200g)", 699, 899, "Experience honey in its most natural form — straight from the comb. Our honeycomb is hand-cut from frames and sealed in food-safe boxes. Chew it, spread it on warm bread, or pair it with cheese for a gourmet snack.", "/images/pollen-honey.png", JSON.stringify(["Raw Honeycomb", "Hand-Cut Pieces", "Gourmet Snack", "Contains Beeswax & Propolis"]), "Honeycomb", 300, 15, 12, 5],
+      ["Jamun Honey (500g)", 649, 849, "Harvested during the Jamun (Indian Blackberry) flowering season, this honey has a rich, slightly tangy flavor and a dark color. Traditionally used in Ayurveda, it's believed to support blood sugar management.", "/images/jamun-honey.png", JSON.stringify(["Seasonal Harvest", "Ayurvedic Properties", "Low Glycemic Index", "Rich Dark Color"]), "Specialty", 750, 12, 12, 16]
     ];
     for (const p of seedProds) {
-      await pool.query("INSERT INTO products (name, price, originalPrice, description, image, features, category) VALUES (?, ?, ?, ?, ?, ?, ?)", p);
+      await pool.query("INSERT INTO products (name, price, originalPrice, description, image, features, category, weight_grams, length_cm, breadth_cm, height_cm) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", p);
     }
+  }
+
+  // Update existing products with correct weight/dimensions if they are at defaults or NULL
+  const productSpecs = [
+    { name: "Live Green Raw Honey (500g)", w: 750, l: 12, b: 12, h: 16 },
+    { name: "Wild Forest Honey (350g)", w: 550, l: 10, b: 10, h: 14 },
+    { name: "Acacia Honey (250g)", w: 400, l: 9, b: 9, h: 12 },
+    { name: "Multiflora Honey (1kg)", w: 1300, l: 15, b: 15, h: 20 },
+    { name: "Honeycomb Box (200g)", w: 300, l: 15, b: 12, h: 5 },
+    { name: "Jamun Honey (500g)", w: 750, l: 12, b: 12, h: 16 }
+  ];
+
+  for (const spec of productSpecs) {
+    await pool.query(
+      "UPDATE products SET weight_grams = ?, length_cm = ?, breadth_cm = ?, height_cm = ? WHERE name = ? AND (weight_grams = 500 OR weight_grams IS NULL)",
+      [spec.w, spec.l, spec.b, spec.h, spec.name]
+    );
   }
 
   const [blogCnt]: any = await pool.query("SELECT count(*) as count FROM blogs");
@@ -1549,27 +1706,60 @@ async function startServer() {
 
       const icarryClient = await getICarryClient();
       const orders = await Promise.all(rows.map(async (row: any) => {
-        let tracking = row.icarry_awb ? {
+        let tracking: any = row.icarry_awb ? {
           awb: row.icarry_awb,
           tracking_url: row.icarry_tracking_url,
           current_status: row.icarry_status || row.status,
           milestones: [] 
         } : null;
 
-        // Fetch real-time tracking if we have a shipment ID
+        // Fetch real-time tracking if we have shipment ID(s)
         if (icarryClient && row.icarry_shipment_id) {
-          try {
-            const realTimeTracking = await icarryClient.trackShipment(row.icarry_shipment_id);
-            if (realTimeTracking?.success) {
-              tracking = {
-                ...tracking,
-                awb: realTimeTracking.awb || tracking?.awb,
-                current_status: realTimeTracking.current_status || tracking?.current_status,
-                milestones: realTimeTracking.milestones || []
-              };
+          const sids = String(row.icarry_shipment_id).split(',').map((s: string) => s.trim());
+          const trackings: any[] = [];
+          for (const sid of sids) {
+            if (sid) {
+              try {
+                const realTimeTracking = await icarryClient.trackShipment(sid);
+                if (realTimeTracking?.success) {
+                  trackings.push(realTimeTracking);
+                }
+              } catch (e) {
+                console.error("Failed to fetch real-time tracking for shipment ID:", sid, e);
+              }
             }
-          } catch (e) {
-            console.error("Failed to fetch real-time tracking:", e);
+          }
+
+          if (trackings.length > 0) {
+            const allMilestones: any[] = [];
+            const awbsList: string[] = [];
+            const urlsList: string[] = [];
+            const statusesList: string[] = [];
+            const courierNamesList: string[] = [];
+
+            for (const t of trackings) {
+              if (t.awb) awbsList.push(t.awb);
+              if (t.tracking_url) urlsList.push(t.tracking_url);
+              if (t.current_status) statusesList.push(t.current_status);
+              if (t.courier_name) courierNamesList.push(t.courier_name);
+              if (t.milestones) {
+                const packagePrefix = trackings.length > 1 ? `[Package AWB: ${t.awb}] ` : '';
+                allMilestones.push(...t.milestones.map((m: any) => ({
+                  ...m,
+                  notes: `${packagePrefix}${m.notes || ''}`
+                })));
+              }
+            }
+
+            allMilestones.sort((a, b) => new Date(a.datetime).getTime() - new Date(b.datetime).getTime());
+
+            tracking = {
+              awb: awbsList.join(', '),
+              tracking_url: urlsList[0] || row.icarry_tracking_url,
+              current_status: statusesList.join(' | '),
+              courier_name: courierNamesList.filter((v, i, a) => a.indexOf(v) === i).join(', '),
+              milestones: allMilestones
+            };
           }
         }
 

@@ -141,6 +141,7 @@ export class ICarryClient {
       unit?: string;   // defaults to 'cm'
     };
     mode?: 'surface' | 'air';
+    save_only?: number | string;
   }) {
     const endpoint = params.mode === 'air'
       ? '/api_add_shipment_air'
@@ -149,6 +150,7 @@ export class ICarryClient {
     const body: Record<string, any> = {
       pickup_address_id: params.pickup_address_id,
       client_order_id: params.client_order_id,
+      save_only: params.save_only,
       consignee: {
         name: params.consignee.name,
         mobile: params.consignee.mobile,
@@ -162,6 +164,16 @@ export class ICarryClient {
         type: params.parcel.type,
         value: params.parcel.value,
         contents: params.parcel.contents.substring(0, 255),
+        dimensions: {
+          length: params.measurements.length,
+          breadth: params.measurements.breadth,
+          height: params.measurements.height,
+          unit: params.measurements.unit || 'cm',
+        },
+        weight: {
+          weight: params.measurements.weight,
+          unit: 'gm',
+        },
       },
       // Weight + dimensions as FLAT top-level params (the working estimate endpoint
       // uses flat `weight/length/breadth/height`). Without official add_shipment docs

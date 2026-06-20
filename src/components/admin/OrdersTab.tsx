@@ -180,39 +180,56 @@ export function OrdersTab() {
                                                                         <p><span className="font-medium text-gray-900 mr-2">Phone:</span> {order.phone}</p>
                                                                         <p><span className="font-medium text-gray-900 mr-2">Email:</span> {order.email}</p>
                                                                         <p className="break-words"><span className="font-medium text-gray-900 mr-2">Address:</span> {order.address}, {order.city}, {order.state} - {order.zip}</p>
-                                                                        {order.icarry_shipment_id && (
-                                                                            <div className="mt-4 p-3 bg-green-50 border border-green-100 rounded-lg">
-                                                                                <div className="flex items-center justify-between mb-2">
-                                                                                    <p className="font-medium text-[#1B5E20] flex items-center gap-2">
-                                                                                        <span className="w-2 h-2 rounded-full bg-[#1B5E20]"></span> 
-                                                                                        iCarry Shipment
-                                                                                    </p>
-                                                                                    {order.icarry_status && (
-                                                                                        <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-white text-[#1B5E20] border border-green-200">
-                                                                                            {order.icarry_status}
-                                                                                        </span>
-                                                                                    )}
+                                                                        {order.icarry_shipment_id && (() => {
+                                                                            const shipmentIds = String(order.icarry_shipment_id).split(',').map(s => s.trim());
+                                                                            const awbs = String(order.icarry_awb || '').split(',').map(s => s.trim());
+                                                                            const trackingUrls = String(order.icarry_tracking_url || '').split(',').map(s => s.trim());
+                                                                            return (
+                                                                                <div className="mt-4 p-3 bg-green-50 border border-green-100 rounded-lg">
+                                                                                    <div className="flex items-center justify-between mb-2 pb-2 border-b border-green-100">
+                                                                                        <p className="font-medium text-[#1B5E20] flex items-center gap-2">
+                                                                                            <span className="w-2 h-2 rounded-full bg-[#1B5E20]"></span> 
+                                                                                            iCarry Shipment ({shipmentIds.length} {shipmentIds.length === 1 ? 'Package' : 'Packages'})
+                                                                                        </p>
+                                                                                        {order.icarry_status && (
+                                                                                            <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-white text-[#1B5E20] border border-green-200">
+                                                                                                {order.icarry_status}
+                                                                                            </span>
+                                                                                        )}
+                                                                                    </div>
+                                                                                    <div className="space-y-3">
+                                                                                        {shipmentIds.map((sid, idx) => {
+                                                                                            const awb = awbs[idx] || '';
+                                                                                            const url = trackingUrls[idx] || '';
+                                                                                            return (
+                                                                                                <div key={sid} className="text-xs pb-2 last:pb-0 last:border-b-0 border-b border-green-100/50">
+                                                                                                    <p className="font-bold text-gray-700 mb-1">Package {idx + 1}</p>
+                                                                                                    <p><span className="text-gray-500 mr-2">Shipment ID:</span> <span className="font-mono font-medium text-gray-900">{sid}</span></p>
+                                                                                                    {awb && awb !== '—' && (
+                                                                                                        <p><span className="text-gray-500 mr-2">AWB:</span> <span className="font-mono font-bold text-gray-900">{awb}</span></p>
+                                                                                                    )}
+                                                                                                    {url && url !== '—' && (
+                                                                                                        <a href={url} target="_blank" rel="noopener noreferrer" className="text-[#1B5E20] hover:underline font-bold inline-block mt-1">
+                                                                                                            Track Package &rarr;
+                                                                                                        </a>
+                                                                                                    )}
+                                                                                                </div>
+                                                                                            );
+                                                                                        })}
+                                                                                    </div>
+                                                                                    <div className="mt-3 pt-3 border-t border-green-100">
+                                                                                        <button
+                                                                                            onClick={() => { if (confirm("Cancel the current shipment and re-book with the latest product weight, dimensions and courier?")) handleBookShipment(order.id); }}
+                                                                                            disabled={bookingId === order.id || ['shipped', 'out_for_delivery', 'delivered'].includes(order.status)}
+                                                                                            title={['shipped', 'out_for_delivery', 'delivered'].includes(order.status) ? "Cannot re-book once shipped/delivered" : ""}
+                                                                                            className="px-3 py-1.5 text-xs font-bold rounded-lg border border-[#1B5E20] text-[#1B5E20] hover:bg-[#1B5E20] hover:text-white disabled:opacity-50 transition"
+                                                                                        >
+                                                                                            {bookingId === order.id ? "Re-booking…" : "Re-book (apply updated details)"}
+                                                                                        </button>
+                                                                                    </div>
                                                                                 </div>
-                                                                                <p><span className="text-gray-500 mr-2">Shipment ID:</span> <span className="font-mono font-medium text-gray-900">{order.icarry_shipment_id}</span></p>
-                                                                                {order.icarry_awb && (
-                                                                                    <p><span className="text-gray-500 mr-2">AWB:</span> <span className="font-mono font-bold text-gray-900">{order.icarry_awb}</span></p>
-                                                                                )}
-                                                                                {order.icarry_tracking_url && (
-                                                                                    <a href={order.icarry_tracking_url} target="_blank" rel="noopener noreferrer" className="text-[#1B5E20] hover:underline text-xs font-bold inline-block mt-2">
-                                                                                        Track Package &rarr;
-                                                                                    </a>
-                                                                                )}
-                                                                                <div className="mt-3 pt-3 border-t border-green-100">
-                                                                                    <button
-                                                                                        onClick={() => { if (confirm("Cancel the current shipment and re-book with the latest product weight, dimensions and courier?")) handleBookShipment(order.id); }}
-                                                                                        disabled={bookingId === order.id}
-                                                                                        className="px-3 py-1.5 text-xs font-bold rounded-lg border border-[#1B5E20] text-[#1B5E20] hover:bg-[#1B5E20] hover:text-white disabled:opacity-50 transition"
-                                                                                    >
-                                                                                        {bookingId === order.id ? "Re-booking…" : "Re-book (apply updated details)"}
-                                                                                    </button>
-                                                                                </div>
-                                                                            </div>
-                                                                        )}
+                                                                            );
+                                                                        })()}
                                                                         {!order.icarry_shipment_id && (
                                                                             <div className="mt-4 p-3 bg-amber-50 border border-amber-100 rounded-lg">
                                                                                 <p className="font-medium text-amber-800 mb-1">No iCarry shipment booked</p>
