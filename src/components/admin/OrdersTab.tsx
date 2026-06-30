@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { getOrders, updateOrderStatus, bookOrderShipment, Order } from "@/lib/api";
+import { generateInvoice } from "@/lib/generateInvoice";
 import { Input } from "@/components/ui/input";
-import { Search, ChevronDown, Check, X } from "lucide-react";
+import { Search, ChevronDown, Check, X, FileText } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 
 export function OrdersTab() {
@@ -10,6 +11,18 @@ export function OrdersTab() {
     const [filterType, setFilterType] = useState<"all" | "standard" | "subscription">("all");
     const [expandedOrder, setExpandedOrder] = useState<string | null>(null);
     const [bookingId, setBookingId] = useState<string | null>(null);
+    const [invoicingId, setInvoicingId] = useState<string | null>(null);
+
+    const handleDownloadInvoice = async (order: Order) => {
+        setInvoicingId(order.id);
+        try {
+            await generateInvoice(order);
+        } catch (e: any) {
+            alert(`Failed to generate invoice: ${e.message}`);
+        } finally {
+            setInvoicingId(null);
+        }
+    };
 
     const handleBookShipment = async (id: string) => {
         setBookingId(id);
@@ -107,13 +120,14 @@ export function OrdersTab() {
                                 <th className="px-6 py-4 font-semibold text-gray-500 text-right">Amount</th>
                                 <th className="px-6 py-4 font-semibold text-gray-500">Payment</th>
                                 <th className="px-6 py-4 font-semibold text-gray-500 text-center">Status</th>
+                                <th className="px-6 py-4 font-semibold text-gray-500 text-center">Invoice</th>
                                 <th className="px-6 py-4 font-semibold text-gray-500 text-center">Actions</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">
                             {filteredOrders.length === 0 ? (
                                 <tr>
-                                    <td colSpan={7} className="px-6 py-12 text-center text-gray-500">No orders found matching your search.</td>
+                                    <td colSpan={8} className="px-6 py-12 text-center text-gray-500">No orders found matching your search.</td>
                                 </tr>
                             ) : (
                                 filteredOrders.map(order => (
@@ -156,6 +170,17 @@ export function OrdersTab() {
                                                     <option value="failed">Failed</option>
                                                 </select>
                                             </td>
+                                            <td className="px-6 py-4 text-center" onClick={(e) => e.stopPropagation()}>
+                                                <button
+                                                    onClick={() => handleDownloadInvoice(order)}
+                                                    disabled={invoicingId === order.id}
+                                                    title="Download PDF Invoice"
+                                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border border-[#1B5E20] text-[#1B5E20] hover:bg-[#1B5E20] hover:text-white disabled:opacity-50 transition-colors"
+                                                >
+                                                    <FileText className="w-3.5 h-3.5" />
+                                                    {invoicingId === order.id ? "Generating…" : "Invoice"}
+                                                </button>
+                                            </td>
                                             <td className="px-6 py-4 text-center">
                                                 <ChevronDown className={`inline-block w-5 h-5 text-gray-400 transition-transform ${expandedOrder === order.id ? 'rotate-180' : ''}`} />
                                             </td>
@@ -164,8 +189,8 @@ export function OrdersTab() {
                                         {/* Expandable Order Details Drawer */}
                                         <AnimatePresence>
                                             {expandedOrder === order.id && (
-                                                <tr className="bg-gray-50/50 relative border-t-0">
-                                                    <td colSpan={7} className="p-0">
+                                                <tr className="bg-gray-50/50 relative border-t-0" key={`expanded-${order.id}`}>
+                                                    <td colSpan={8} className="p-0">
                                                         <motion.div
                                                             initial={{ height: 0, opacity: 0 }}
                                                             animate={{ height: "auto", opacity: 1 }}
