@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { getOrders, updateOrderStatus, bookOrderShipment, Order } from "@/lib/api";
+import { getOrders, updateOrderStatus, bookOrderShipment, applyAdminDiscount, Order } from "@/lib/api";
 import { generateInvoice } from "@/lib/generateInvoice";
 import { Input } from "@/components/ui/input";
 import { Search, ChevronDown, Check, X, FileText, Plus } from "lucide-react";
@@ -14,6 +14,35 @@ export function OrdersTab() {
     const [bookingId, setBookingId] = useState<string | null>(null);
     const [invoicingId, setInvoicingId] = useState<string | null>(null);
     const [showCreateModal, setShowCreateModal] = useState(false);
+    const [selectedOrderIdForDiscount, setSelectedOrderIdForDiscount] = useState<string | null>(null);
+    const [showDiscountModal, setShowDiscountModal] = useState(false);
+    const [discountType, setDiscountType] = useState<'fixed' | 'percentage'>('fixed');
+    const [discountValue, setDiscountValue] = useState<string>('');
+    const [applyingDiscount, setApplyingDiscount] = useState(false);
+
+    const handleSaveDiscount = async () => {
+        if (!selectedOrderIdForDiscount) return;
+        const val = parseFloat(discountValue);
+        if (isNaN(val) || val < 0) {
+            alert("Please enter a valid positive number");
+            return;
+        }
+        setApplyingDiscount(true);
+        try {
+            const res = await applyAdminDiscount(selectedOrderIdForDiscount, discountType, val);
+            if (res.success && res.order) {
+                setOrders(prev => prev.map(o => o.id === selectedOrderIdForDiscount ? { ...o, ...res.order } : o));
+                setShowDiscountModal(false);
+                setSelectedOrderIdForDiscount(null);
+            } else {
+                alert(res.error || "Failed to apply discount");
+            }
+        } catch (e: any) {
+            alert(`Error: ${e.message}`);
+        } finally {
+            setApplyingDiscount(false);
+        }
+    };
 
     const handleDownloadInvoice = async (order: Order) => {
         setInvoicingId(order.id);
@@ -300,14 +329,53 @@ export function OrdersTab() {
                                                                                 <p className="font-bold text-gray-900 text-sm">₹{item.price * item.quantity}</p>
                                                                             </div>
                                                                         ))}
-                                                                        <div className="pt-4 border-t border-gray-200 flex justify-between items-center text-sm">
-                                                                            <span className="font-medium text-gray-500">Shipping</span>
-                                                                            <span className="font-bold text-gray-900">₹0</span>
-                                                                        </div>
-                                                                        <div className="flex justify-between items-center bg-white p-3 rounded-xl border border-gray-100 shadow-sm">
-                                                                            <span className="font-bold text-gray-900">Total</span>
-                                                                            <span className="font-bold text-[#1B5E20] text-lg">₹{order.totalAmount}</span>
-                                                                        </div>
+                                                                        {(() => {
+                                                                            const subtotal = order.items.reduce((acc: number, item: any) => acc + (item.price * item.quantity), 0);
+                                                                            const couponDisc = order.couponDiscount || 0;
+                                                                            const adminDisc = order.adminDiscount || 0;
+                                                                            const shippingCost = Math.max(0, order.totalAmount - Math.max(0, subtotal - couponDisc - adminDisc));
+                                                                            return (
+                                                                                <div className="space-y-2 pt-4 border-t border-gray-200">
+                                                                                    <div className="flex justify-between items-center text-sm text-gray-500">
+                                                                                        <span>Subtotal</span>
+                                                                                        <span className="font-semibold text-gray-950">₹{subtotal}</span>
+                                                                                    </div>
+                                                                                    {(couponDisc > 0 || order.couponCode) && (
+                                                                                        <div className="flex justify-between items-center text-sm text-green-700 bg-green-50/50 p-2 rounded-lg">
+                                                                                            <span className="font-medium">Coupon {order.couponCode ? `(${order.couponCode})` : ""}</span>
+                                                                                            <span className="font-bold">-₹{couponDisc}</span>
+                                                                                        </div>
+                                                                                    )}
+                                                                                    {adminDisc > 0 && (
+                                                                                        <div className="flex justify-between items-center text-sm text-blue-700 bg-blue-50/50 p-2 rounded-lg">
+                                                                                            <span className="font-medium">Admin Discount</span>
+                                                                                            <span className="font-bold">-₹{adminDisc}</span>
+                                                                                        </div>
+                                                                                    )}
+                                                                                    <div className="flex justify-between items-center text-sm text-gray-500">
+                                                                                        <span>Shipping</span>
+                                                                                        <span className="font-semibold text-gray-950">₹{shippingCost}</span>
+                                                                                    </div>
+                                                                                    <div className="flex justify-between items-center bg-white p-3 rounded-xl border border-gray-100 shadow-sm">
+                                                                                        <span className="font-bold text-gray-900">Total</span>
+                                                                                        <span className="font-bold text-[#1B5E20] text-lg">₹{order.totalAmount}</span>
+                                                                                    </div>
+                                                                                    <div className="pt-2">
+                                                                                        <button
+                                                                                            onClick={() => {
+                                                                                                setSelectedOrderIdForDiscount(order.id);
+                                                                                                setDiscountType('fixed');
+                                                                                                setDiscountValue(adminDisc > 0 ? String(adminDisc) : '');
+                                                                                                setShowDiscountModal(true);
+                                                                                            }}
+                                                                                            className="w-full py-2 px-3 text-xs font-semibold rounded-lg border border-blue-600 text-blue-600 hover:bg-blue-600 hover:text-white transition-colors text-center"
+                                                                                        >
+                                                                                            {adminDisc > 0 ? "Edit Admin Discount" : "Apply Admin Discount"}
+                                                                                        </button>
+                                                                                    </div>
+                                                                                </div>
+                                                                            );
+                                                                        })()}
                                                                     </div>
                                                                 </div>
                                                             </div>
@@ -334,6 +402,75 @@ export function OrdersTab() {
                     setShowCreateModal(false);
                 }}
             />
+        )}
+
+        {/* Admin Discount Modal */}
+        {showDiscountModal && selectedOrderIdForDiscount && (
+            <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
+                <div className="bg-white rounded-3xl p-6 shadow-2xl w-full max-w-sm" onClick={(e) => e.stopPropagation()}>
+                    <h3 className="text-lg font-bold text-gray-900 font-serif mb-4">Apply Admin Discount</h3>
+                    <div className="space-y-4">
+                        <div>
+                            <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Discount Type</label>
+                            <div className="flex gap-2">
+                                <button
+                                    onClick={() => setDiscountType('fixed')}
+                                    className={`flex-1 py-2 rounded-xl text-sm font-semibold border transition ${
+                                        discountType === 'fixed'
+                                            ? 'bg-[#1B5E20] text-white border-[#1B5E20]'
+                                            : 'bg-white text-gray-600 border-gray-200 hover:border-[#1B5E20]'
+                                    }`}
+                                >
+                                    Fixed Amount (₹)
+                                </button>
+                                <button
+                                    onClick={() => setDiscountType('percentage')}
+                                    className={`flex-1 py-2 rounded-xl text-sm font-semibold border transition ${
+                                        discountType === 'percentage'
+                                            ? 'bg-[#1B5E20] text-white border-[#1B5E20]'
+                                            : 'bg-white text-gray-600 border-gray-200 hover:border-[#1B5E20]'
+                                    }`}
+                                >
+                                    Percentage (%)
+                                </button>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">
+                                Discount Value {discountType === 'fixed' ? '(₹)' : '(%)'}
+                            </label>
+                            <Input
+                                type="number"
+                                min="0"
+                                placeholder={discountType === 'fixed' ? 'e.g. 150' : 'e.g. 10'}
+                                value={discountValue}
+                                onChange={(e) => setDiscountValue(e.target.value)}
+                                className="h-11 rounded-xl border-gray-200 focus:ring-[#1B5E20] focus:border-[#1B5E20]"
+                            />
+                        </div>
+                    </div>
+
+                    <div className="mt-6 flex gap-3">
+                        <button
+                            onClick={() => {
+                                setShowDiscountModal(false);
+                                setSelectedOrderIdForDiscount(null);
+                            }}
+                            className="flex-1 py-2.5 bg-gray-100 text-gray-700 rounded-xl font-semibold text-sm hover:bg-gray-200 transition"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            onClick={handleSaveDiscount}
+                            disabled={applyingDiscount || !discountValue}
+                            className="flex-1 py-2.5 bg-[#1B5E20] text-white rounded-xl font-semibold text-sm hover:bg-[#154719] disabled:opacity-50 transition"
+                        >
+                            {applyingDiscount ? 'Applying…' : 'Apply'}
+                        </button>
+                    </div>
+                </div>
+            </div>
         )}
         </>
     );

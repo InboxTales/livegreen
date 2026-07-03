@@ -401,7 +401,10 @@ async function initDB() {
       icarry_status TEXT,
       icarry_error TEXT,
       is_subscription INTEGER DEFAULT 0,
-      promoCodeId INTEGER
+      promoCodeId INTEGER,
+      couponCode VARCHAR(50),
+      couponDiscount INTEGER DEFAULT 0,
+      adminDiscount INTEGER DEFAULT 0
     )`,
     `CREATE TABLE IF NOT EXISTS customers (
       id SERIAL PRIMARY KEY,
@@ -591,7 +594,10 @@ async function initDB() {
     { name: 'icarry_status', type: 'TEXT' },
     { name: 'icarry_error', type: 'TEXT' },
     { name: 'is_subscription', type: 'INTEGER DEFAULT 0' },
-    { name: 'promoCodeId', type: 'INTEGER' }
+    { name: 'promoCodeId', type: 'INTEGER' },
+    { name: 'couponCode', type: 'VARCHAR(50)' },
+    { name: 'couponDiscount', type: 'INTEGER DEFAULT 0' },
+    { name: 'adminDiscount', type: 'INTEGER DEFAULT 0' }
   ];
 
   for (const col of expectedOrderCols) {
@@ -1385,7 +1391,7 @@ async function startServer() {
   });
 
   app.post("/api/orders", async (req, res) => {
-    const { id, customerName, email, phone, address, city, state, zip, items, totalAmount, paymentMethod, paymentId, date, icarry_shipment_id, icarry_awb, icarry_tracking_url, icarry_status } = req.body;
+    const { id, customerName, email, phone, address, city, state, zip, items, totalAmount, paymentMethod, paymentId, date, icarry_shipment_id, icarry_awb, icarry_tracking_url, icarry_status, promoCodeId } = req.body;
 
     const connection = await pool.getConnection();
     try {
@@ -1403,8 +1409,27 @@ async function startServer() {
         await connection.query("UPDATE products SET stock = GREATEST(0, stock - ?) WHERE id = ?", [item.quantity, item.id]);
       }
 
-      await connection.query("INSERT INTO orders (id, customerName, email, phone, address, city, state, zip, items, totalAmount, paymentMethod, paymentId, status, date, icarry_shipment_id, icarry_awb, icarry_tracking_url, icarry_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        [id, customerName, email, phone, address, city, state, zip, JSON.stringify(items), totalAmount, paymentMethod, paymentId, 'pending', date, icarry_shipment_id, icarry_awb, icarry_tracking_url, icarry_status]);
+      let couponCode = null;
+      let couponDiscount = 0;
+      if (promoCodeId) {
+        const [promos]: any = await connection.query("SELECT * FROM promo_codes WHERE id = ?", [promoCodeId]);
+        if (promos.length > 0) {
+          const promo = promos[0];
+          couponCode = promo.code;
+          let subtotal = 0;
+          for (const item of items) {
+            subtotal += item.price * item.quantity;
+          }
+          if (promo.discountType === 'percentage') {
+            couponDiscount = Math.round((subtotal * promo.discountValue) / 100);
+          } else {
+            couponDiscount = promo.discountValue;
+          }
+        }
+      }
+
+      await connection.query("INSERT INTO orders (id, customerName, email, phone, address, city, state, zip, items, totalAmount, paymentMethod, paymentId, status, date, icarry_shipment_id, icarry_awb, icarry_tracking_url, icarry_status, promoCodeId, couponCode, couponDiscount) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        [id, customerName, email, phone, address, city, state, zip, JSON.stringify(items), totalAmount, paymentMethod, paymentId, 'pending', date, icarry_shipment_id, icarry_awb, icarry_tracking_url, icarry_status, promoCodeId || null, couponCode, couponDiscount]);
 
       // Create notification
       await connection.query("INSERT INTO notifications (type, title, message, priority, created_at) VALUES (?, ?, ?, ?, ?)",
@@ -1458,7 +1483,7 @@ async function startServer() {
       customerName, email, phone,
       address, city, state, zip,
       items, totalAmount, paymentMethod,
-      date, bookICarry,
+      date, bookICarry, adminDiscount,
     } = req.body;
 
     if (!customerName || !email || !phone || !address || !city || !state || !zip) {
@@ -1505,13 +1530,15 @@ async function startServer() {
         `INSERT INTO orders
           (id, customerName, email, phone, address, city, state, zip,
            items, totalAmount, paymentMethod, paymentId, status, date,
-           icarry_shipment_id, icarry_awb, icarry_tracking_url, icarry_status)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           icarry_shipment_id, icarry_awb, icarry_tracking_url, icarry_status,
+           promoCodeId, couponCode, couponDiscount, adminDiscount)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           orderId, customerName, email, phone, address, city, state, zip,
           JSON.stringify(items), totalAmount, paymentMethod,
           null, 'paid', orderDate,
           null, null, null, null,
+          null, null, 0, Number(adminDiscount) || 0,
         ]
       );
 
@@ -1546,6 +1573,97 @@ async function startServer() {
       res.status(500).json({ success: false, error: "Failed to create order" });
     } finally {
       connection.release();
+    }
+  });
+
+  // Apply admin discount manually to an order
+  app.post("/api/orders/:id/admin_discount", verifyAdmin, async (req, res) => {
+    const { discountType, discountValue } = req.body;
+    const { id } = req.params;
+
+    if (!['fixed', 'percentage'].includes(discountType)) {
+      return res.status(400).json({ success: false, error: "Invalid discount type" });
+    }
+
+    const value = Number(discountValue);
+    if (isNaN(value) || value < 0) {
+      return res.status(400).json({ success: false, error: "Invalid discount value" });
+    }
+
+    try {
+      const [orders]: any = await pool.query("SELECT * FROM orders WHERE id = ?", [id]);
+      if (orders.length === 0) {
+        return res.status(404).json({ success: false, error: "Order not found" });
+      }
+      const order = orders[0];
+
+      // Calculate items subtotal
+      const items = JSON.parse(order.items || "[]");
+      let subtotal = 0;
+      for (const item of items) {
+        subtotal += item.price * item.quantity;
+      }
+
+      // Determine coupon discount (if stored, use it. If not, try to reconstruct it)
+      let couponDiscount = Number(order.couponDiscount) || 0;
+      let couponCode = order.couponCode || null;
+
+      if (!couponDiscount && order.promoCodeId) {
+        const [promos]: any = await pool.query("SELECT * FROM promo_codes WHERE id = ?", [order.promoCodeId]);
+        if (promos.length > 0) {
+          const promo = promos[0];
+          couponCode = promo.code;
+          if (promo.discountType === 'percentage') {
+            couponDiscount = Math.round((subtotal * promo.discountValue) / 100);
+          } else {
+            couponDiscount = promo.discountValue;
+          }
+        }
+      }
+
+      // Calculate admin discount
+      let adminDiscount = 0;
+      if (discountType === 'percentage') {
+        adminDiscount = Math.round((subtotal * value) / 100);
+      } else {
+        adminDiscount = value;
+      }
+
+      // Preserve shipping cost
+      const shippingCost = Math.max(0, order.totalAmount - Math.max(0, subtotal - couponDiscount));
+
+      // Calculate new total amount
+      const newTotalAmount = Math.max(0, subtotal - couponDiscount - adminDiscount + shippingCost);
+
+      // Update database
+      await pool.query(
+        "UPDATE orders SET adminDiscount = ?, totalAmount = ?, couponCode = ?, couponDiscount = ? WHERE id = ?",
+        [adminDiscount, newTotalAmount, couponCode, couponDiscount, id]
+      );
+
+      // Log audit
+      const adminUser = (req as any).user?.username || (req as any).user?.email || 'admin';
+      const ip = (req.headers['x-forwarded-for'] as string || req.socket.remoteAddress || '').split(',')[0].trim();
+      await logAudit(
+        adminUser, 'APPLY_DISCOUNT', 'order', id,
+        `Applied admin discount of ${value}${discountType === 'percentage' ? '%' : ' INR'} (Calculated: ₹${adminDiscount}). Recalculated totalAmount to ₹${newTotalAmount}.`,
+        ip
+      );
+
+      res.json({
+        success: true,
+        order: {
+          ...order,
+          items,
+          adminDiscount,
+          couponCode,
+          couponDiscount,
+          totalAmount: newTotalAmount
+        }
+      });
+    } catch (e: any) {
+      console.error("Failed to apply admin discount:", e);
+      res.status(500).json({ success: false, error: e.message || "Failed to apply admin discount" });
     }
   });
 
@@ -1645,11 +1763,9 @@ async function startServer() {
         }
       });
 
-      // 4. PRE-INSERT order into DB as 'pending'
-      // This ensures we have a record before the payment widget even opens
       await pool.query(
-        "INSERT INTO orders (id, customerName, email, phone, address, city, state, zip, items, totalAmount, paymentMethod, paymentId, status, date, promoCodeId) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        [rzpOrder.id, customerInfo.name, customerInfo.email, customerInfo.phone, customerInfo.address, customerInfo.city, customerInfo.state, customerInfo.zip, JSON.stringify(items), finalAmount, 'razorpay', null, 'pending', new Date().toISOString(), promoCodeId]
+        "INSERT INTO orders (id, customerName, email, phone, address, city, state, zip, items, totalAmount, paymentMethod, paymentId, status, date, promoCodeId, couponCode, couponDiscount) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        [rzpOrder.id, customerInfo.name, customerInfo.email, customerInfo.phone, customerInfo.address, customerInfo.city, customerInfo.state, customerInfo.zip, JSON.stringify(items), finalAmount, 'razorpay', null, 'pending', new Date().toISOString(), promoCodeId, promoCode ? promoCode.toUpperCase() : null, discount]
       );
 
       res.json({

@@ -101,6 +101,9 @@ export const db = {
             
             // orders table
             'promocodeid': 'promoCodeId',
+            'couponcode': 'couponCode',
+            'coupondiscount': 'couponDiscount',
+            'admindiscount': 'adminDiscount',
 
             // google_reviews table
             'reviewername': 'reviewerName',
@@ -189,6 +192,9 @@ export const db = {
               orderid: 'orderId',
               nextbillingdate: 'nextBillingDate',
               promocodeid: 'promoCodeId',
+              couponcode: 'couponCode',
+              coupondiscount: 'couponDiscount',
+              admindiscount: 'adminDiscount',
               reviewername: 'reviewerName',
               reviewtext: 'reviewText',
               reviewdate: 'reviewDate',

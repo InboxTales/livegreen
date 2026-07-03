@@ -240,24 +240,52 @@ export async function generateInvoice(order: Order): Promise<void> {
     y += rH > rowH ? rH : rowH;
   });
 
-  // ── 5. Invoice Total row ─────────────────────────────────────────────────
-  const totRowH = 9;
-  doc.rect(L, y, tableW, totRowH);
-  [col.qty, col.unitPrice, col.total].forEach(cx =>
-    vline(doc, cx, y, y + totRowH)
-  );
+  // ── 5. Total breakdown rows ──────────────────────────────────────────────
+  const subtotal = order.items.reduce((s: number, item: any) => s + (Number(item.price) || 0) * (Number(item.quantity) || 0), 0);
+  const couponDiscount = Number(order.couponDiscount) || 0;
+  const adminDiscount = Number(order.adminDiscount) || 0;
+  const shippingCost = Math.max(0, Number(order.totalAmount) - Math.max(0, subtotal - couponDiscount - adminDiscount));
 
-  // "Invoice Total" label spans up to the total column, right-aligned
-  doc.setFontSize(9);
-  doc.setFont("helvetica", "bold");
-  setColor(doc, DARK);
-  doc.text("Invoice Total", col.total - 3, y + 6, { align: "right" });
+  const rowH = 8;
+  const colTotalX = col.total + 3;
 
-  // Total value
-  bold(doc, `Rs. ${invoiceTotal.toFixed(0)}`, col.total + 3, y + 6, 9);
+  const drawSummaryRow = (label: string, valueStr: string, isBold = false) => {
+    doc.rect(L, y, tableW, rowH);
+    vline(doc, col.total, y, y + rowH);
+    
+    doc.setFont("helvetica", isBold ? "bold" : "normal");
+    doc.setFontSize(9);
+    setColor(doc, DARK);
+    doc.text(label, col.total - 3, y + 5.5, { align: "right" });
+    
+    if (isBold) {
+      bold(doc, valueStr, colTotalX, y + 5.5, 9);
+    } else {
+      regular(doc, valueStr, colTotalX, y + 5.5, 9);
+    }
+    y += rowH;
+  };
+
+  // Subtotal
+  drawSummaryRow("Subtotal", `Rs. ${subtotal.toFixed(0)}`);
+
+  // Coupon Discount
+  if (couponDiscount > 0 || order.couponCode) {
+    const couponLabel = order.couponCode ? `Coupon Discount (${order.couponCode})` : "Coupon Discount";
+    drawSummaryRow(couponLabel, `-Rs. ${couponDiscount.toFixed(0)}`);
+  }
+
+  // Admin Discount
+  drawSummaryRow("Admin Discount", adminDiscount > 0 ? `-Rs. ${adminDiscount.toFixed(0)}` : "Rs. 0");
+
+  // Shipping
+  drawSummaryRow("Shipping", `Rs. ${shippingCost.toFixed(0)}`);
+
+  // Final Payable Amount
+  drawSummaryRow("Final Payable Amount", `Rs. ${Number(order.totalAmount).toFixed(0)}`, true);
 
   // ── 6. Footer ─────────────────────────────────────────────────────────────
-  y += totRowH + 12;
+  y += 12;
   hline(doc, y);
   y += 6;
   doc.setFontSize(8);

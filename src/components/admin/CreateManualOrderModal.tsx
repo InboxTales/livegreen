@@ -41,6 +41,8 @@ interface OrderSettings {
   useCustomDate: boolean;
   customDate: string;
   bookICarry: boolean;
+  discountType: "none" | "fixed" | "percentage";
+  discountValue: string;
 }
 
 interface Props {
@@ -389,6 +391,43 @@ function StepSettings({
           />
         </button>
       </div>
+
+      {/* Discount Section */}
+      <div className="p-4 bg-gray-50 rounded-2xl border border-gray-100 space-y-3">
+        <div>
+          <p className="font-semibold text-gray-900 text-sm">Apply Discount</p>
+          <p className="text-xs text-gray-500 mt-0.5">Manually discount this order</p>
+        </div>
+        <div className="flex gap-2">
+          {(["none", "fixed", "percentage"] as const).map((t) => (
+            <button
+              key={t}
+              type="button"
+              onClick={() => {
+                onChange("discountType", t);
+                onChange("discountValue", "");
+              }}
+              className={`flex-1 py-2 rounded-xl text-xs font-semibold border transition-all uppercase ${
+                settings.discountType === t
+                  ? "bg-[#1B5E20] text-white border-[#1B5E20]"
+                  : "bg-white text-gray-600 border-gray-200 hover:border-[#1B5E20]"
+              }`}
+            >
+              {t === "none" ? "None" : t === "fixed" ? "Fixed (₹)" : "Percent (%)"}
+            </button>
+          ))}
+        </div>
+        {settings.discountType !== "none" && (
+          <Input
+            type="number"
+            min="0"
+            placeholder={settings.discountType === "fixed" ? "e.g. 150" : "e.g. 10"}
+            value={settings.discountValue}
+            onChange={(e) => onChange("discountValue", e.target.value)}
+            className="h-11 rounded-xl border-gray-200 focus:ring-[#1B5E20] focus:border-[#1B5E20]"
+          />
+        )}
+      </div>
     </div>
   );
 }
@@ -403,7 +442,16 @@ function StepReview({
   cart: CartItem[];
   settings: OrderSettings;
 }) {
-  const total = cart.reduce((s, c) => s + c.product.price * c.quantity, 0);
+  const subtotal = cart.reduce((s, c) => s + c.product.price * c.quantity, 0);
+
+  let adminDiscount = 0;
+  if (settings.discountType === "percentage") {
+    adminDiscount = Math.round((subtotal * (parseFloat(settings.discountValue) || 0)) / 100);
+  } else if (settings.discountType === "fixed") {
+    adminDiscount = Math.round(parseFloat(settings.discountValue) || 0);
+  }
+  const total = Math.max(0, subtotal - adminDiscount);
+
   const paymentDisplay =
     settings.paymentMethod === "Other" ? settings.customPayment || "Other" : settings.paymentMethod;
 
@@ -427,9 +475,22 @@ function StepReview({
             <span className="font-bold text-gray-900">₹{product.price * quantity}</span>
           </div>
         ))}
-        <div className="pt-2 mt-1 border-t border-gray-200 flex justify-between items-center">
-          <span className="font-bold text-gray-900">Total</span>
-          <span className="font-bold text-[#1B5E20] text-lg">₹{total}</span>
+        
+        <div className="pt-2 mt-1 border-t border-gray-200 space-y-1.5">
+          <div className="flex justify-between items-center text-gray-500 text-xs">
+            <span>Subtotal</span>
+            <span>₹{subtotal}</span>
+          </div>
+          {adminDiscount > 0 && (
+            <div className="flex justify-between items-center text-[#1B5E20] text-xs bg-green-50/50 p-1.5 rounded-lg">
+              <span>Admin Discount</span>
+              <span className="font-semibold">-₹{adminDiscount}</span>
+            </div>
+          )}
+          <div className="flex justify-between items-center pt-1.5 border-t border-gray-100">
+            <span className="font-bold text-gray-900">Total</span>
+            <span className="font-bold text-[#1B5E20] text-lg">₹{total}</span>
+          </div>
         </div>
       </div>
 
@@ -475,6 +536,8 @@ export function CreateManualOrderModal({ onClose, onSuccess }: Props) {
     useCustomDate: false,
     customDate: "",
     bookICarry: true,
+    discountType: "none",
+    discountValue: "",
   });
 
   const backdropRef = useRef<HTMLDivElement>(null);
@@ -535,7 +598,14 @@ export function CreateManualOrderModal({ onClose, onSuccess }: Props) {
         image: product.image,
       }));
 
-      const totalAmount = cart.reduce((s, c) => s + c.product.price * c.quantity, 0);
+      const subtotal = cart.reduce((s, c) => s + c.product.price * c.quantity, 0);
+      let adminDiscount = 0;
+      if (settings.discountType === "percentage") {
+        adminDiscount = Math.round((subtotal * (parseFloat(settings.discountValue) || 0)) / 100);
+      } else if (settings.discountType === "fixed") {
+        adminDiscount = Math.round(parseFloat(settings.discountValue) || 0);
+      }
+      const totalAmount = Math.max(0, subtotal - adminDiscount);
 
       const result = await createManualOrder({
         customerName: customer.name,
@@ -550,6 +620,7 @@ export function CreateManualOrderModal({ onClose, onSuccess }: Props) {
         paymentMethod,
         date,
         bookICarry: settings.bookICarry,
+        adminDiscount,
       });
 
       if (!result.success) throw new Error(result.error || "Order creation failed");
@@ -569,6 +640,7 @@ export function CreateManualOrderModal({ onClose, onSuccess }: Props) {
         paymentMethod,
         status: "paid",
         date,
+        adminDiscount,
       };
 
       setCreatedOrder(newOrder);

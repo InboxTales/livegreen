@@ -199,6 +199,9 @@ export interface Order {
   icarry_status?: string;
   icarry_error?: string;
   date: string;
+  couponCode?: string | null;
+  couponDiscount?: number;
+  adminDiscount?: number;
 }
 
 
@@ -505,11 +508,20 @@ export async function createManualOrder(orderData: {
   paymentMethod: string;
   date?: string;
   bookICarry: boolean;
+  adminDiscount?: number;
 }): Promise<{ success: boolean; orderId: string; error?: string }> {
   return fetchAuth("/api/manual_orders", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(orderData),
+  });
+}
+
+export async function applyAdminDiscount(orderId: string, discountType: 'fixed' | 'percentage', discountValue: number): Promise<{ success: boolean; error?: string; order?: Order }> {
+  return fetchAuth(`/api/orders/${orderId}/admin_discount`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ discountType, discountValue })
   });
 }
 
