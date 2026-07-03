@@ -492,6 +492,27 @@ export async function bookOrderShipment(id: string): Promise<{ success: boolean;
   return fetchAuth(`/api/orders/${id}/book_shipment`, { method: "POST" });
 }
 
+export async function createManualOrder(orderData: {
+  customerName: string;
+  email: string;
+  phone: string;
+  address: string;
+  city: string;
+  state: string;
+  zip: string;
+  items: { id: number; name: string; price: number; quantity: number; image: string }[];
+  totalAmount: number;
+  paymentMethod: string;
+  date?: string;
+  bookICarry: boolean;
+}): Promise<{ success: boolean; orderId: string; error?: string }> {
+  return fetchAuth("/api/manual_orders", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(orderData),
+  });
+}
+
 export async function cancelSubscription(orderId: string) {
   return fetchPublic("/api/subscriptions", {
     method: "POST",

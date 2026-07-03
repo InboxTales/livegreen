@@ -2,8 +2,9 @@ import React, { useState, useEffect } from "react";
 import { getOrders, updateOrderStatus, bookOrderShipment, Order } from "@/lib/api";
 import { generateInvoice } from "@/lib/generateInvoice";
 import { Input } from "@/components/ui/input";
-import { Search, ChevronDown, Check, X, FileText } from "lucide-react";
+import { Search, ChevronDown, Check, X, FileText, Plus } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
+import { CreateManualOrderModal } from "@/components/admin/CreateManualOrderModal";
 
 export function OrdersTab() {
     const [orders, setOrders] = useState<Order[]>([]);
@@ -12,6 +13,7 @@ export function OrdersTab() {
     const [expandedOrder, setExpandedOrder] = useState<string | null>(null);
     const [bookingId, setBookingId] = useState<string | null>(null);
     const [invoicingId, setInvoicingId] = useState<string | null>(null);
+    const [showCreateModal, setShowCreateModal] = useState(false);
 
     const handleDownloadInvoice = async (order: Order) => {
         setInvoicingId(order.id);
@@ -65,6 +67,7 @@ export function OrdersTab() {
     });
 
     return (
+        <>
         <div>
             <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mb-8">
                 <div>
@@ -72,6 +75,13 @@ export function OrdersTab() {
                     <p className="text-gray-500 mt-1">Manage and track customer orders here.</p>
                 </div>
                 <div className="flex gap-2 text-sm font-medium">
+                    <button
+                        onClick={() => setShowCreateModal(true)}
+                        className="px-4 py-2 bg-[#1B5E20] text-white shadow-sm rounded-xl hover:bg-[#164a1a] flex items-center gap-2 transition font-semibold"
+                    >
+                        <Plus className="w-4 h-4" />
+                        Create Manual Order
+                    </button>
                     <button 
                         onClick={() => {
                             // Hit the endpoint again to trigger sync + UI refresh
@@ -314,6 +324,18 @@ export function OrdersTab() {
                 </div>
             </div>
         </div>
+
+        {/* Manual Order Creation Modal */}
+        {showCreateModal && (
+            <CreateManualOrderModal
+                onClose={() => setShowCreateModal(false)}
+                onSuccess={() => {
+                    loadOrders();
+                    setShowCreateModal(false);
+                }}
+            />
+        )}
+        </>
     );
 }
 

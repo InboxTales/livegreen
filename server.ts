@@ -1451,6 +1451,104 @@ async function startServer() {
     }
   });
 
+  // ── Admin Manual Order Creation ─────────────────────────────────────────
+  // Protected — admins only. Bypasses Razorpay; initial status is 'paid'.
+  app.post("/api/manual_orders", verifyAdmin, async (req, res) => {
+    const {
+      customerName, email, phone,
+      address, city, state, zip,
+      items, totalAmount, paymentMethod,
+      date, bookICarry,
+    } = req.body;
+
+    if (!customerName || !email || !phone || !address || !city || !state || !zip) {
+      return res.status(400).json({ success: false, error: "Missing required customer fields" });
+    }
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ success: false, error: "At least one item is required" });
+    }
+
+    // Generate a unique manual order ID
+    const orderId = `MAN-${Date.now()}`;
+    const orderDate = date || new Date().toISOString();
+
+    const connection = await pool.getConnection();
+    try {
+      await connection.beginTransaction();
+
+      // Upsert customer record
+      const [existingCust]: any = await connection.query(
+        "SELECT * FROM customers WHERE email = ?", [email]
+      );
+      if (existingCust.length > 0) {
+        await connection.query(
+          "UPDATE customers SET totalSpent = totalSpent + ?, ordersCount = ordersCount + 1 WHERE email = ?",
+          [totalAmount, email]
+        );
+      } else {
+        await connection.query(
+          "INSERT INTO customers (name, email, phone, totalSpent, ordersCount, joinDate) VALUES (?, ?, ?, ?, ?, ?)",
+          [customerName, email, phone, totalAmount, 1, orderDate]
+        );
+      }
+
+      // Deduct stock for each item
+      for (const item of items) {
+        await connection.query(
+          "UPDATE products SET stock = GREATEST(0, stock - ?) WHERE id = ?",
+          [item.quantity, item.id]
+        );
+      }
+
+      // Insert order row — status 'paid' since this is a manually confirmed order
+      await connection.query(
+        `INSERT INTO orders
+          (id, customerName, email, phone, address, city, state, zip,
+           items, totalAmount, paymentMethod, paymentId, status, date,
+           icarry_shipment_id, icarry_awb, icarry_tracking_url, icarry_status)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          orderId, customerName, email, phone, address, city, state, zip,
+          JSON.stringify(items), totalAmount, paymentMethod,
+          null, 'paid', orderDate,
+          null, null, null, null,
+        ]
+      );
+
+      // Create notification
+      await connection.query(
+        "INSERT INTO notifications (type, title, message, priority, created_at) VALUES (?, ?, ?, ?, ?)",
+        ['order', 'Manual Order Created', `Manual order ${orderId} from ${customerName} for ₹${totalAmount}`, 'high', new Date().toISOString()]
+      );
+
+      await connection.commit();
+
+      // Audit log
+      const adminUser = (req as any).user?.username || (req as any).user?.email || 'admin';
+      const ip = (req.headers['x-forwarded-for'] as string || req.socket.remoteAddress || '').split(',')[0].trim();
+      await logAudit(adminUser, 'CREATE', 'manual_order', orderId, `Manual order for ${customerName} (${email}), ₹${totalAmount}, payment: ${paymentMethod}, iCarry: ${bookICarry}`, ip);
+
+      // Optionally book iCarry shipment
+      if (bookICarry) {
+        // bookOrderShipment expects the DB row shape; fetch it back after commit
+        const [newRows]: any = await pool.query("SELECT * FROM orders WHERE id = ?", [orderId]);
+        if (newRows.length > 0) {
+          bookOrderShipment(newRows[0]).catch((e: any) =>
+            console.error(`[manual_order] iCarry booking failed for ${orderId}:`, e.message)
+          );
+        }
+      }
+
+      res.json({ success: true, orderId });
+    } catch (e: any) {
+      await connection.rollback();
+      console.error("Failed to create manual order:", e);
+      res.status(500).json({ success: false, error: "Failed to create order" });
+    } finally {
+      connection.release();
+    }
+  });
+
   app.post("/api/check_pincode", async (req, res) => {
     const { pincode } = req.body;
     const icarryClient = await getICarryClient();
