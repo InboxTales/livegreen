@@ -1689,8 +1689,15 @@ async function startServer() {
 
   // Customers
   app.get("/api/customers", verifyAdmin, async (req, res) => {
-    const [customers] = await pool.query("SELECT * FROM customers ORDER BY totalSpent DESC");
-    res.json(customers);
+    const [customers]: any = await pool.query("SELECT * FROM customers ORDER BY totalSpent DESC");
+    // Normalize fields to avoid null crashing frontend string methods
+    const normalized = (customers as any[]).map((c: any) => ({
+      ...c,
+      name: c.name != null ? String(c.name) : '',
+      email: c.email != null ? String(c.email) : '',
+      phone: c.phone != null ? String(c.phone) : '',
+    }));
+    res.json(normalized);
   });
 
   // Razorpay Order Creation
