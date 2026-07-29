@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { getOrders, updateOrderStatus, bookOrderShipment, applyAdminDiscount, Order } from "@/lib/api";
 import { generateInvoice } from "@/lib/generateInvoice";
 import { Input } from "@/components/ui/input";
-import { Search, ChevronDown, Check, X, FileText, Plus } from "lucide-react";
+import { Search, ChevronDown, FileText, Plus, Download, Calendar } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { CreateManualOrderModal } from "@/components/admin/CreateManualOrderModal";
 
@@ -10,6 +10,8 @@ export function OrdersTab() {
     const [orders, setOrders] = useState<Order[]>([]);
     const [searchTerm, setSearchTerm] = useState("");
     const [filterType, setFilterType] = useState<"all" | "standard" | "subscription">("all");
+    const [dateFrom, setDateFrom] = useState("");
+    const [dateTo, setDateTo] = useState("");
     const [expandedOrder, setExpandedOrder] = useState<string | null>(null);
     const [bookingId, setBookingId] = useState<string | null>(null);
     const [invoicingId, setInvoicingId] = useState<string | null>(null);
@@ -19,6 +21,17 @@ export function OrdersTab() {
     const [discountType, setDiscountType] = useState<'fixed' | 'percentage'>('fixed');
     const [discountValue, setDiscountValue] = useState<string>('');
     const [applyingDiscount, setApplyingDiscount] = useState(false);
+    const [showExportModal, setShowExportModal] = useState(false);
+    const [exportFrom, setExportFrom] = useState("");
+    const [exportTo, setExportTo] = useState("");
+
+    // Format Order ID: keep MAN- IDs as-is; shorten Razorpay "order_XXXX" style IDs
+    const formatOrderId = (id: string) => {
+        if (id.startsWith('order_')) {
+            return id.replace('order_', '#') .substring(0, 12);
+        }
+        return id;
+    };
 
     const handleSaveDiscount = async () => {
         if (!selectedOrderIdForDiscount) return;
@@ -85,15 +98,65 @@ export function OrdersTab() {
     };
 
     const filteredOrders = orders.filter(o => {
-        const matchesSearch = o.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            o.customerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            o.email.toLowerCase().includes(searchTerm.toLowerCase());
+        const matchesSearch = (o.id || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+            (o.customerName || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+            (o.email || '').toLowerCase().includes(searchTerm.toLowerCase());
 
         const isSub = !!Number(o.is_subscription);
         const matchesType = filterType === "all" ? true : (filterType === "subscription" ? isSub : !isSub);
 
-        return matchesSearch && matchesType;
+        let matchesDate = true;
+        if (dateFrom || dateTo) {
+            const orderDate = new Date(o.date);
+            if (dateFrom) matchesDate = matchesDate && orderDate >= new Date(dateFrom);
+            if (dateTo) {
+                const end = new Date(dateTo);
+                end.setHours(23, 59, 59, 999);
+                matchesDate = matchesDate && orderDate <= end;
+            }
+        }
+
+        return matchesSearch && matchesType && matchesDate;
     });
+
+    const handleExportCSV = () => {
+        const toExport = orders.filter(o => {
+            let inRange = true;
+            if (exportFrom || exportTo) {
+                const d = new Date(o.date);
+                if (exportFrom) inRange = inRange && d >= new Date(exportFrom);
+                if (exportTo) {
+                    const end = new Date(exportTo);
+                    end.setHours(23, 59, 59, 999);
+                    inRange = inRange && d <= end;
+                }
+            }
+            return inRange;
+        });
+
+        const headers = ['Order ID', 'Customer Name', 'Email', 'Phone', 'Date', 'Amount', 'Payment Method', 'Status', 'Items'];
+        const rows = toExport.map(o => [
+            o.id,
+            o.customerName || '',
+            o.email || '',
+            o.phone || '',
+            new Date(o.date).toLocaleString(),
+            o.totalAmount,
+            o.paymentMethod || '',
+            o.status,
+            o.items.map((it: any) => `${it.name} x${it.quantity}`).join(' | ')
+        ]);
+
+        const csv = [headers, ...rows].map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
+        const blob = new Blob([csv], { type: 'text/csv' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `orders_${exportFrom || 'all'}_to_${exportTo || 'all'}.csv`;
+        a.click();
+        URL.revokeObjectURL(url);
+        setShowExportModal(false);
+    };
 
     return (
         <>
@@ -103,7 +166,7 @@ export function OrdersTab() {
                     <h2 className="text-3xl font-bold text-gray-900 font-serif">Orders</h2>
                     <p className="text-gray-500 mt-1">Manage and track customer orders here.</p>
                 </div>
-                <div className="flex gap-2 text-sm font-medium">
+                <div className="flex gap-2 text-sm font-medium flex-wrap">
                     <button
                         onClick={() => setShowCreateModal(true)}
                         className="px-4 py-2 bg-[#1B5E20] text-white shadow-sm rounded-xl hover:bg-[#164a1a] flex items-center gap-2 transition font-semibold"
@@ -111,12 +174,19 @@ export function OrdersTab() {
                         <Plus className="w-4 h-4" />
                         Create Manual Order
                     </button>
-                    <button 
+                    <button
                         onClick={() => {
-                            // Hit the endpoint again to trigger sync + UI refresh
-                            // We can bypass cooldown in PHP if we wanted but simple refresh is fine
-                            loadOrders(); 
+                            setExportFrom(dateFrom);
+                            setExportTo(dateTo);
+                            setShowExportModal(true);
                         }}
+                        className="px-4 py-2 border border-gray-200 bg-white shadow-sm rounded-xl hover:bg-gray-50 flex items-center gap-2 transition"
+                    >
+                        <Download className="w-4 h-4" />
+                        Export CSV
+                    </button>
+                    <button 
+                        onClick={() => loadOrders()}
                         className="px-4 py-2 border border-gray-200 bg-white shadow-sm rounded-xl hover:bg-gray-50 flex items-center gap-2 transition"
                     >
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-refresh-cw"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
@@ -125,8 +195,8 @@ export function OrdersTab() {
                 </div>
             </div>
 
-            <div className="flex flex-col sm:flex-row gap-4 mb-8">
-                <div className="relative flex-1">
+            <div className="flex flex-col sm:flex-row gap-3 mb-8 flex-wrap">
+                <div className="relative flex-1 min-w-[200px]">
                     <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
                     <Input
                         placeholder="Search by Order ID, Name, or Email..."
@@ -134,6 +204,27 @@ export function OrdersTab() {
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
                     />
+                </div>
+                <div className="flex items-center gap-2 bg-white border border-gray-200 shadow-sm rounded-xl px-3 h-12">
+                    <Calendar className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                    <input
+                        type="date"
+                        value={dateFrom}
+                        onChange={e => setDateFrom(e.target.value)}
+                        className="text-sm outline-none text-gray-600 bg-transparent"
+                        title="From date"
+                    />
+                    <span className="text-gray-400 text-sm">–</span>
+                    <input
+                        type="date"
+                        value={dateTo}
+                        onChange={e => setDateTo(e.target.value)}
+                        className="text-sm outline-none text-gray-600 bg-transparent"
+                        title="To date"
+                    />
+                    {(dateFrom || dateTo) && (
+                        <button onClick={() => { setDateFrom(''); setDateTo(''); }} className="text-gray-400 hover:text-gray-700 ml-1 text-xs font-bold">✕</button>
+                    )}
                 </div>
                 <div className="w-full sm:w-48 flex-shrink-0">
                     <select
@@ -172,7 +263,7 @@ export function OrdersTab() {
                                 filteredOrders.map(order => (
                                     <React.Fragment key={order.id}>
                                         <tr className="hover:bg-gray-50/50 transition-colors cursor-pointer group" onClick={() => setExpandedOrder(expandedOrder === order.id ? null : order.id)}>
-                                            <td className="px-6 py-4 font-mono font-bold text-gray-900">{order.id}</td>
+                                            <td className="px-6 py-4 font-mono font-bold text-gray-900" title={order.id}>{formatOrderId(order.id)}</td>
                                             <td className="px-6 py-4">
                                                 <div className="flex items-center gap-2">
                                                     <div className="font-bold text-gray-900">{order.customerName}</div>
@@ -199,14 +290,13 @@ export function OrdersTab() {
                                                                         order.status === 'cancelled' || order.status === 'failed' ? 'border-rose-200 bg-rose-50 text-rose-700' :
                                                                             'border-amber-200 bg-amber-50 text-amber-700'}`}
                                                 >
-                                                    <option value="pending">Pending</option>
-                                                    <option value="paid">Paid</option>
-                                                    <option value="processing">Processing</option>
-                                                    <option value="shipped">Shipped</option>
-                                                    <option value="out_for_delivery">Out for Delivery</option>
-                                                    <option value="delivered">Delivered</option>
-                                                    <option value="cancelled">Cancelled</option>
-                                                    <option value="failed">Failed</option>
+                                                    <option value="pending">Pending – Payment not confirmed yet</option>
+                                                    <option value="paid">Paid – Payment received, not dispatched</option>
+                                                    <option value="processing">Processing – Being packed / prepared</option>
+                                                    <option value="shipped">Shipped – Handed off to courier</option>
+                                                    <option value="out_for_delivery">Out for Delivery – With delivery agent</option>
+                                                    <option value="delivered">Delivered – Customer received</option>
+                                                    <option value="cancelled">Cancelled – Order cancelled</option>
                                                 </select>
                                             </td>
                                             <td className="px-6 py-4 text-center" onClick={(e) => e.stopPropagation()}>
@@ -467,6 +557,51 @@ export function OrdersTab() {
                             className="flex-1 py-2.5 bg-[#1B5E20] text-white rounded-xl font-semibold text-sm hover:bg-[#154719] disabled:opacity-50 transition"
                         >
                             {applyingDiscount ? 'Applying…' : 'Apply'}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        )}
+
+        {/* Export CSV Modal */}
+        {showExportModal && (
+            <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
+                <div className="bg-white rounded-3xl p-6 shadow-2xl w-full max-w-sm" onClick={e => e.stopPropagation()}>
+                    <h3 className="text-lg font-bold text-gray-900 font-serif mb-1">Export Orders to CSV</h3>
+                    <p className="text-sm text-gray-500 mb-5">Choose a date range to filter exported orders. Leave blank to export all orders.</p>
+                    <div className="space-y-4">
+                        <div>
+                            <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">From Date</label>
+                            <input
+                                type="date"
+                                value={exportFrom}
+                                onChange={e => setExportFrom(e.target.value)}
+                                className="w-full h-11 rounded-xl border border-gray-200 px-3 text-sm outline-none focus:ring-2 focus:ring-[#1B5E20] focus:border-[#1B5E20]"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">To Date</label>
+                            <input
+                                type="date"
+                                value={exportTo}
+                                onChange={e => setExportTo(e.target.value)}
+                                className="w-full h-11 rounded-xl border border-gray-200 px-3 text-sm outline-none focus:ring-2 focus:ring-[#1B5E20] focus:border-[#1B5E20]"
+                            />
+                        </div>
+                    </div>
+                    <div className="mt-6 flex gap-3">
+                        <button
+                            onClick={() => setShowExportModal(false)}
+                            className="flex-1 py-2.5 bg-gray-100 text-gray-700 rounded-xl font-semibold text-sm hover:bg-gray-200 transition"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            onClick={handleExportCSV}
+                            className="flex-1 py-2.5 bg-[#1B5E20] text-white rounded-xl font-semibold text-sm hover:bg-[#154719] transition flex items-center justify-center gap-2"
+                        >
+                            <Download className="w-4 h-4" />
+                            Download CSV
                         </button>
                     </div>
                 </div>

@@ -17,11 +17,13 @@ export function CustomersTab() {
         setCustomers(data);
     };
 
-    const filteredCustomers = customers.filter(c =>
-        c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        c.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        c.phone.includes(searchTerm)
-    );
+    const filteredCustomers = customers.filter(c => {
+        const name = (c.name || '').toLowerCase();
+        const email = (c.email || '').toLowerCase();
+        const phone = (c.phone || '');
+        const term = searchTerm.toLowerCase();
+        return name.includes(term) || email.includes(term) || phone.includes(searchTerm);
+    });
 
     return (
         <div>
@@ -65,14 +67,14 @@ export function CustomersTab() {
                                         <td className="px-6 py-4">
                                             <div className="flex items-center gap-3">
                                                 <div className="h-10 w-10 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-700 font-bold uppercase">
-                                                    {customer.name.charAt(0)}
+                                                    {(customer.name || '?').charAt(0)}
                                                 </div>
-                                                <span className="font-bold text-gray-900">{customer.name}</span>
+                                                <span className="font-bold text-gray-900">{customer.name || '—'}</span>
                                             </div>
                                         </td>
                                         <td className="px-6 py-4">
-                                            <div className="text-gray-900">{customer.email}</div>
-                                            <div className="text-gray-500 text-xs">{customer.phone}</div>
+                                            <div className="text-gray-900">{customer.email || '—'}</div>
+                                            <div className="text-gray-500 text-xs">{customer.phone || '—'}</div>
                                         </td>
                                         <td className="px-6 py-4 text-gray-500">{new Date(customer.joinDate).toLocaleDateString()}</td>
                                         <td className="px-6 py-4 text-center">
