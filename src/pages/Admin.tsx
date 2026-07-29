@@ -1,6 +1,6 @@
 import React, { useState, useEffect, lazy, Suspense } from "react";
 import { useNavigate } from "react-router-dom";
-import { LayoutDashboard, ShoppingBag, Users, Package, FileText, Ticket, MessageSquare, Star, Gift, LogOut, ArrowLeft, Settings as SettingsIcon, Globe, Video, History, Mail, ShieldCheck } from "lucide-react";
+import { LayoutDashboard, ShoppingBag, Users, Package, FileText, Ticket, MessageSquare, Star, Gift, LogOut, ArrowLeft, Settings as SettingsIcon, Globe, Video, History, Mail, ShieldCheck, Wallet } from "lucide-react";
 import { AdminLogin } from "@/components/admin/AdminLogin";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
@@ -21,8 +21,9 @@ const VideoTestimonialsTab = lazy(() => import("@/components/admin/VideoTestimon
 const SubscriptionsTab = lazy(() => import("@/components/admin/SubscriptionsTab").then(m => ({ default: m.SubscriptionsTab })));
 const AuditLogTab = lazy(() => import("@/components/admin/AuditLogTab").then(m => ({ default: m.AuditLogTab })));
 const EmailCampaignsTab = lazy(() => import("@/components/admin/EmailCampaignsTab").then(m => ({ default: m.EmailCampaignsTab })));
+const ExpenseManagerTab = lazy(() => import("@/components/admin/ExpenseManagerTab").then(m => ({ default: m.ExpenseManagerTab })));
 
-type TabId = 'dashboard' | 'orders' | 'customers' | 'products' | 'blogs' | 'promos' | 'inquiries' | 'reviews' | 'google-reviews' | 'video-testimonials' | 'referrals' | 'subscriptions' | 'audit-log' | 'email-campaigns';
+type TabId = 'dashboard' | 'orders' | 'customers' | 'products' | 'blogs' | 'promos' | 'inquiries' | 'reviews' | 'google-reviews' | 'video-testimonials' | 'referrals' | 'subscriptions' | 'audit-log' | 'email-campaigns' | 'expenses';
 
 class AdminErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean, error: Error | null }> {
   constructor(props: any) {
@@ -105,6 +106,7 @@ function AdminDashboardContent() {
     { id: 'subscriptions', label: 'Subscriptions', icon: FileText },
     { id: 'email-campaigns', label: 'Email Campaigns', icon: Mail },
     { id: 'audit-log', label: 'Audit Log', icon: History },
+    { id: 'expenses', label: 'Expense Manager', icon: Wallet },
     { id: 'settings', label: 'Settings', icon: SettingsIcon },
   ] as const;
 
@@ -187,6 +189,7 @@ function AdminDashboardContent() {
           {activeTab === 'subscriptions' && <SubscriptionsTab />}
           {activeTab === 'audit-log' && <AuditLogTab />}
           {activeTab === 'email-campaigns' && <EmailCampaignsTab />}
+          {activeTab === 'expenses' && <ExpenseManagerTab />}
           {activeTab === 'settings' && <SettingsPage />}
           </Suspense>
         </div>

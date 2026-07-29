@@ -61,7 +61,7 @@ export interface Blog {
   seoKeywords?: string;
 }
 
-async function fetchAuth(url: string, options: RequestInit = {}) {
+export async function fetchAuth(url: string, options: RequestInit = {}) {
   const token = Cookies.get("admin_token");
   const headers = new Headers(options.headers || {});
   if (token) {

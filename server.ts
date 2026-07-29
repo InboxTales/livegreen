@@ -548,6 +548,27 @@ async function initDB() {
       isVisible INTEGER DEFAULT 1,
       product_id INTEGER,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )`,
+    `CREATE TABLE IF NOT EXISTS expense_categories (
+      id SERIAL PRIMARY KEY,
+      name VARCHAR(255) NOT NULL,
+      expense_group VARCHAR(100) NOT NULL,
+      expense_type VARCHAR(50) NOT NULL,
+      description TEXT,
+      is_active INTEGER DEFAULT 1,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )`,
+    `CREATE TABLE IF NOT EXISTS expenses (
+      id SERIAL PRIMARY KEY,
+      expense_date VARCHAR(100) NOT NULL,
+      category_id INTEGER NOT NULL,
+      amount NUMERIC(12,2) NOT NULL,
+      payment_method VARCHAR(100) NOT NULL,
+      description TEXT NOT NULL,
+      vendor VARCHAR(255),
+      bill_url TEXT,
+      notes TEXT,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )`
   ];
 
@@ -1698,6 +1719,88 @@ async function startServer() {
       phone: c.phone != null ? String(c.phone) : '',
     }));
     res.json(normalized);
+  });
+
+  // ═══════════════ EXPENSE CATEGORIES ═══════════════
+  app.get("/api/expense-categories", verifyAdmin, async (req, res) => {
+    const [rows]: any = await pool.query("SELECT * FROM expense_categories ORDER BY expense_group, name");
+    res.json(rows);
+  });
+
+  app.post("/api/expense-categories", verifyAdmin, async (req, res) => {
+    const { name, expense_group, expense_type, description, is_active } = req.body;
+    if (!name || !expense_group || !expense_type) return res.status(400).json({ error: "name, expense_group, expense_type are required" });
+    const [result]: any = await pool.query(
+      "INSERT INTO expense_categories (name, expense_group, expense_type, description, is_active) VALUES (?, ?, ?, ?, ?) RETURNING id",
+      [name, expense_group, expense_type, description || null, is_active !== undefined ? is_active : 1]
+    );
+    const newId = result[0]?.id ?? result.insertId;
+    const [rows]: any = await pool.query("SELECT * FROM expense_categories WHERE id = ?", [newId]);
+    res.json({ success: true, category: rows[0] });
+  });
+
+  app.put("/api/expense-categories/:id", verifyAdmin, async (req, res) => {
+    const { id } = req.params;
+    const { name, expense_group, expense_type, description, is_active } = req.body;
+    await pool.query(
+      "UPDATE expense_categories SET name=?, expense_group=?, expense_type=?, description=?, is_active=? WHERE id=?",
+      [name, expense_group, expense_type, description || null, is_active !== undefined ? is_active : 1, id]
+    );
+    const [rows]: any = await pool.query("SELECT * FROM expense_categories WHERE id = ?", [id]);
+    res.json({ success: true, category: rows[0] });
+  });
+
+  app.delete("/api/expense-categories/:id", verifyAdmin, async (req, res) => {
+    const { id } = req.params;
+    // Check if any expenses use this category
+    const [used]: any = await pool.query("SELECT COUNT(*) as cnt FROM expenses WHERE category_id = ?", [id]);
+    if (used[0]?.cnt > 0) return res.status(400).json({ error: "Cannot delete — category is used by existing expenses. Deactivate it instead." });
+    await pool.query("DELETE FROM expense_categories WHERE id = ?", [id]);
+    res.json({ success: true });
+  });
+
+  // ═══════════════ EXPENSES ═══════════════
+  app.get("/api/expenses", verifyAdmin, async (req, res) => {
+    const [rows]: any = await pool.query(`
+      SELECT e.*, ec.name as category_name, ec.expense_group, ec.expense_type
+      FROM expenses e
+      LEFT JOIN expense_categories ec ON e.category_id = ec.id
+      ORDER BY e.expense_date DESC, e.created_at DESC
+    `);
+    res.json(rows);
+  });
+
+  app.post("/api/expenses", verifyAdmin, async (req, res) => {
+    const { expense_date, category_id, amount, payment_method, description, vendor, bill_url, notes } = req.body;
+    if (!expense_date || !category_id || !amount || !payment_method || !description)
+      return res.status(400).json({ error: "expense_date, category_id, amount, payment_method, description are required" });
+    const [result]: any = await pool.query(
+      "INSERT INTO expenses (expense_date, category_id, amount, payment_method, description, vendor, bill_url, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
+      [expense_date, category_id, amount, payment_method, description, vendor || null, bill_url || null, notes || null]
+    );
+    const newId = result[0]?.id ?? result.insertId;
+    const [rows]: any = await pool.query(`
+      SELECT e.*, ec.name as category_name, ec.expense_group, ec.expense_type
+      FROM expenses e LEFT JOIN expense_categories ec ON e.category_id = ec.id WHERE e.id = ?`, [newId]);
+    res.json({ success: true, expense: rows[0] });
+  });
+
+  app.put("/api/expenses/:id", verifyAdmin, async (req, res) => {
+    const { id } = req.params;
+    const { expense_date, category_id, amount, payment_method, description, vendor, bill_url, notes } = req.body;
+    await pool.query(
+      "UPDATE expenses SET expense_date=?, category_id=?, amount=?, payment_method=?, description=?, vendor=?, bill_url=?, notes=? WHERE id=?",
+      [expense_date, category_id, amount, payment_method, description, vendor || null, bill_url || null, notes || null, id]
+    );
+    const [rows]: any = await pool.query(`
+      SELECT e.*, ec.name as category_name, ec.expense_group, ec.expense_type
+      FROM expenses e LEFT JOIN expense_categories ec ON e.category_id = ec.id WHERE e.id = ?`, [id]);
+    res.json({ success: true, expense: rows[0] });
+  });
+
+  app.delete("/api/expenses/:id", verifyAdmin, async (req, res) => {
+    await pool.query("DELETE FROM expenses WHERE id = ?", [req.params.id]);
+    res.json({ success: true });
   });
 
   // Razorpay Order Creation
