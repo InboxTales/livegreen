@@ -26,9 +26,59 @@ function looksLikePhone(input: string): boolean {
     return /^\d{7,15}$/.test(digits);
 }
 
+function getTimelineStageIndex(order: TrackedOrder): number {
+    const s = (order.status || '').toLowerCase();
+    const trackingStatus = (order.tracking?.current_status || '').toLowerCase();
+
+    // 1. Check live iCarry courier status first
+    if (trackingStatus.includes('delivered') || trackingStatus.includes('dlvd')) return 4;
+    if (trackingStatus.includes('out for delivery') || trackingStatus.includes('ofd')) return 3;
+    if (trackingStatus.includes('in transit') || trackingStatus.includes('shipped') || trackingStatus.includes('dispatched')) return 2;
+    if (trackingStatus.includes('manifest') || trackingStatus.includes('booked') || trackingStatus.includes('pickup') || trackingStatus.includes('processing')) return 1;
+
+    // 2. Fall back to DB order status
+    if (s === 'delivered') return 4;
+    if (s === 'out_for_delivery') return 3;
+    if (s === 'shipped') return 2;
+    if (s === 'processing') return 1;
+    if (s === 'paid' || s === 'pending' || s === 'created') return 0;
+
+    return 0;
+}
+
 function OrderCard({ order, highlight = false }: { order: TrackedOrder; highlight?: boolean }) {
-    const statusIdx = STATUSES.findIndex(s => s.key === order.status);
+    const statusIdx = getTimelineStageIndex(order);
     const displayId = order.order_number || order.id;
+
+    const isPaid = order.status === 'paid' || order.payment_status === 'captured';
+    const isDelivered = order.status === 'delivered';
+    const isCancelled = order.status === 'cancelled';
+    const isShipped = order.status === 'shipped';
+    const isProcessing = order.status === 'processing';
+    const isOFD = order.status === 'out_for_delivery';
+
+    let primaryBadgeText = "ORDER PLACED";
+    let primaryBadgeClass = "bg-amber-400/30 text-amber-100 border border-amber-400/30";
+
+    if (isDelivered) {
+        primaryBadgeText = "DELIVERED";
+        primaryBadgeClass = "bg-emerald-400/30 text-emerald-100 border border-emerald-400/30";
+    } else if (isCancelled) {
+        primaryBadgeText = "CANCELLED";
+        primaryBadgeClass = "bg-rose-400/30 text-rose-100 border border-rose-400/30";
+    } else if (isOFD) {
+        primaryBadgeText = "OUT FOR DELIVERY";
+        primaryBadgeClass = "bg-orange-400/30 text-orange-100 border border-orange-400/30";
+    } else if (isShipped) {
+        primaryBadgeText = "SHIPPED";
+        primaryBadgeClass = "bg-purple-400/30 text-purple-100 border border-purple-400/30";
+    } else if (isProcessing) {
+        primaryBadgeText = "PROCESSING";
+        primaryBadgeClass = "bg-blue-400/30 text-blue-100 border border-blue-400/30";
+    } else if (isPaid) {
+        primaryBadgeText = "PAID";
+        primaryBadgeClass = "bg-emerald-400/30 text-emerald-100 border border-emerald-400/30";
+    }
 
     return (
         <motion.div
@@ -45,13 +95,24 @@ function OrderCard({ order, highlight = false }: { order: TrackedOrder; highligh
                         )}
                     </div>
                     <div className="flex flex-col items-end gap-1.5">
-                        <span className={`px-4 py-1.5 rounded-full text-xs font-black uppercase tracking-wider ${order.status === 'delivered' ? 'bg-emerald-400/30 text-emerald-100 border border-emerald-400/30' :
-                            order.status === 'cancelled' ? 'bg-rose-400/30 text-rose-100 border border-rose-400/30' : 'bg-white/20 text-white'}`}>
-                            {order.status}
+                        <span className={`px-4 py-1.5 rounded-full text-xs font-black uppercase tracking-wider ${primaryBadgeClass}`}>
+                            {primaryBadgeText}
                         </span>
-                        {order.payment_status && (
-                            <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full ${order.payment_status === 'captured' ? 'bg-emerald-400/20 text-emerald-100' : 'bg-white/15 text-white/80'}`}>
-                                {PAYMENT_STATUS_LABELS[order.payment_status] || order.payment_status}
+                        {isPaid ? (
+                            <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-400/20 text-emerald-100 border border-emerald-400/20">
+                                Payment Received
+                            </span>
+                        ) : order.payment_status === 'refunded' ? (
+                            <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-purple-400/20 text-purple-100">
+                                Refunded
+                            </span>
+                        ) : order.payment_status === 'failed' ? (
+                            <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-rose-400/20 text-rose-100">
+                                Payment Failed
+                            </span>
+                        ) : (
+                            <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-amber-400/20 text-amber-100">
+                                Payment Pending
                             </span>
                         )}
                     </div>
@@ -108,7 +169,18 @@ function OrderCard({ order, highlight = false }: { order: TrackedOrder; highligh
                     </div>
                 )}
 
-                {/* iCarry Tracking Section */}
+                {/* Info banner when no iCarry tracking URL yet */}
+                {!order.tracking && order.status !== 'cancelled' && (
+                    <div className="bg-emerald-50/50 border border-emerald-100 rounded-2xl p-4 flex items-start gap-3">
+                        <Package className="w-5 h-5 text-[#1B5E20] flex-shrink-0 mt-0.5" />
+                        <div className="text-xs text-emerald-950">
+                            <p className="font-bold text-sm text-[#1B5E20]">Order Confirmed &amp; Processing</p>
+                            <p className="mt-0.5 text-gray-600">Your order is being packaged. Live AWB tracking &amp; courier milestones will appear here as soon as shipment is dispatched via iCarry.</p>
+                        </div>
+                    </div>
+                )}
+
+                {/* iCarry Live Tracking Section */}
                 {order.tracking && (
                     <div className="border border-emerald-200 rounded-2xl overflow-hidden bg-emerald-50/40 shadow-sm">
                         <div className="bg-emerald-100/60 px-5 py-3.5 flex items-center justify-between">
@@ -161,6 +233,7 @@ function OrderCard({ order, highlight = false }: { order: TrackedOrder; highligh
                         )}
                     </div>
                 )}
+
 
                 <div className="border-t border-gray-100 pt-4">
                     <p className="text-xs text-gray-400 font-bold uppercase tracking-widest mb-3">Ordered Items</p>
