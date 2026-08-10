@@ -105,27 +105,27 @@ export default function Home() {
         setVideoTestimonials([
           { 
             id: 'v1', 
-            name: 'Vinny Gidda', 
-            location: 'Hyderabad', 
-            title: 'I trust Live Green Honey for my kid!', 
+            name: 'Arvind P', 
+            location: 'Jagital', 
+            title: 'I trust Live Green Honey for my family!', 
             video_url: 'https://youtube.com/shorts/SIzVDLtq66M',
             thumbnail_url: 'https://i.ytimg.com/vi/SIzVDLtq66M/hqdefault.jpg',
             duration: '0:45'
           },
           {
             id: 'v2',
-            name: 'Aravind P',
-            location: 'Jagital',
-            title: 'Organic honey from Godavari!',
+            name: 'Poojitha Pindi',
+            location: 'Hyderabad',
+            title: 'Organic honey from Live Green! Full of health & Purity!',
             video_url: 'https://youtube.com/shorts/S3Yl-LVRVb4',
             thumbnail_url: 'https://i.ytimg.com/vi/S3Yl-LVRVb4/hqdefault.jpg',
             duration: '1:12'
           },
           {
             id: 'v3',
-            name: 'Poojitha',
+            name: 'Vinny Gidda',
             location: 'Hyderabad',
-            title: 'I stopped using sugar the day I tried this honey',
+            title: 'I trust Live Green Honey for my kid!',
             video_url: 'https://youtube.com/shorts/QW70oYtVMI8',
             thumbnail_url: 'https://i.ytimg.com/vi/QW70oYtVMI8/hqdefault.jpg',
             duration: '0:58'
@@ -628,25 +628,25 @@ export default function Home() {
             {(() => {
               const fallbacks = [
                 {
-                  name: "Vinny Gidda",
-                  location: "Hyderabad",
-                  title: "I trust Live Green Honey for my kid!",
+                  name: "Arvind P",
+                  location: "Jagital",
+                  title: "I trust Live Green Honey for my family!",
                   video_url: "https://youtube.com/shorts/SIzVDLtq66M",
                   thumbnail: "https://i.ytimg.com/vi/SIzVDLtq66M/hqdefault.jpg",
                   duration: "0:45"
                 },
                 {
-                  name: "Aravind P",
-                  location: "Jagital",
+                  name: "Poojitha Pindi",
+                  location: "Hyderabad",
                   title: "Organic honey from Live Green! Full of health & Purity!",
                   video_url: "https://youtube.com/shorts/S3Yl-LVRVb4",
                   thumbnail: "https://i.ytimg.com/vi/S3Yl-LVRVb4/hqdefault.jpg",
                   duration: "1:12"
                 },
                 {
-                  name: "Poojitha",
+                  name: "Vinny Gidda",
                   location: "Hyderabad",
-                  title: "I stopped using sugar the day I tried this honey",
+                  title: "I trust Live Green Honey for my kid!",
                   video_url: "https://youtube.com/shorts/QW70oYtVMI8",
                   thumbnail: "https://i.ytimg.com/vi/QW70oYtVMI8/hqdefault.jpg",
                   duration: "0:58"

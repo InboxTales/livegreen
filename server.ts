@@ -830,6 +830,15 @@ async function initDB() {
     await pool.query("ALTER TABLE video_testimonials ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP");
   }
 
+  // Update DB records for video testimonials if they exist with old names
+  try {
+    await pool.query("UPDATE video_testimonials SET name = 'Arvind P', location = 'Jagital' WHERE video_url LIKE '%SIzVDLtq66M%'");
+    await pool.query("UPDATE video_testimonials SET name = 'Poojitha Pindi', location = 'Hyderabad' WHERE video_url LIKE '%S3Yl-LVRVb4%'");
+    await pool.query("UPDATE video_testimonials SET name = 'Vinny Gidda', location = 'Hyderabad' WHERE video_url LIKE '%QW70oYtVMI8%'");
+  } catch (e: any) {
+    console.warn('[DB] Could not update video_testimonials records:', e.message);
+  }
+
 
   // Seed default settings 
   const defaultSettings = [
