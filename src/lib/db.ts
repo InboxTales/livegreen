@@ -44,10 +44,13 @@ export const db = {
       .replace(/INT AUTO_INCREMENT/g, "SERIAL")
       .replace(/INTEGER PRIMARY KEY AUTOINCREMENT/g, "SERIAL PRIMARY KEY");
 
-    // Handle insertId for Postgres
+    // Auto-add RETURNING id for INSERT statements so insertId works, BUT only for tables
+    // that have an `id` column. Tables with a different PK (e.g. order_sequences.seq_type)
+    // will crash if we blindly add RETURNING id.
+    // Solution: use RETURNING * and extract `id` from the result row.
     const isInsert = pgSql.trim().toUpperCase().startsWith("INSERT");
     if (isInsert && !pgSql.toUpperCase().includes("RETURNING")) {
-      pgSql += " RETURNING id";
+      pgSql += " RETURNING *";
     }
 
     try {
@@ -121,7 +124,9 @@ export const db = {
       if (sql.trim().toUpperCase().startsWith("SELECT") || sql.trim().toUpperCase().startsWith("SHOW")) {
         return [rows, result.fields];
       } else {
-        return [{ insertId: (rows[0] as any)?.id || null, affectedRows: result.rowCount }];
+        // For INSERTs with RETURNING *, rows[0] may or may not have `id`.
+        // Safely extract it without crashing on tables like order_sequences.
+        return [{ insertId: (rows[0] as any)?.id ?? null, affectedRows: result.rowCount }];
       }
     } catch (err: any) {
       console.error("Postgres Query Error:", err.message, "SQL:", pgSql.substring(0, 100));
@@ -150,9 +155,10 @@ export const db = {
         .replace(/INT AUTO_INCREMENT/g, 'SERIAL')
         .replace(/INTEGER PRIMARY KEY AUTOINCREMENT/g, 'SERIAL PRIMARY KEY');
 
+      // Auto-add RETURNING * for INSERTs (same fix as pool.query above).
       const isInsert = pgSql.trim().toUpperCase().startsWith('INSERT');
       if (isInsert && !pgSql.toUpperCase().includes('RETURNING')) {
-        pgSql += ' RETURNING id';
+        pgSql += ' RETURNING *';
       }
 
       try {
@@ -209,7 +215,7 @@ export const db = {
         if (sql.trim().toUpperCase().startsWith('SELECT') || sql.trim().toUpperCase().startsWith('SHOW')) {
           return [rows, result.fields];
         } else {
-          return [{ insertId: (rows[0] as any)?.id || null, affectedRows: result.rowCount }];
+          return [{ insertId: (rows[0] as any)?.id ?? null, affectedRows: result.rowCount }];
         }
       } catch (err: any) {
         console.error('Postgres Client Query Error:', err.message, 'SQL:', pgSql.substring(0, 100));
