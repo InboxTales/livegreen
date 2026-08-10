@@ -180,6 +180,11 @@ export interface OrderItem {
 
 export interface Order {
   id: string;
+  /** Human-readable sequential order number (M1000 = manual, A1000 = website).
+   *  Null/undefined for historical orders that pre-date this field; UI falls back to `id`. */
+  order_number?: string | null;
+  /** Razorpay's order_XXXX ID — same as `id` for Razorpay orders, null for manual orders. */
+  provider_order_id?: string | null;
   customerName: string;
   email: string;
   phone: string;
@@ -192,6 +197,9 @@ export interface Order {
   paymentMethod: string;
   paymentId?: string;
   status: 'pending' | 'paid' | 'processing' | 'shipped' | 'out_for_delivery' | 'delivered' | 'cancelled' | 'failed';
+  /** Payment-provider lifecycle status, separate from order lifecycle.
+   *  'pending' = no payment captured, 'captured' = Razorpay payment captured. */
+  payment_status?: 'pending' | 'captured' | 'failed' | 'refunded';
   is_subscription?: boolean;
   icarry_shipment_id?: string;
   icarry_awb?: string;
@@ -213,6 +221,12 @@ export interface Customer {
   totalSpent: number;
   ordersCount: number;
   joinDate: string;
+  /** Date of the customer's most recent order (ISO string). Null if no orders. */
+  last_order_date?: string | null;
+  /** Order number of the most recent order (e.g. M1000, A1001). */
+  last_order_number?: string | null;
+  /** Total amount of the most recent order. */
+  last_order_amount?: number | null;
 }
 
 export interface DashboardStats {
@@ -281,6 +295,10 @@ export interface PromoCode {
   discountValue: number;
   minSpend: number;
   expiryDate: string;
+  /** Date from which this promo becomes active (null = active immediately) */
+  startDate?: string | null;
+  /** HH:MM time component for startDate (defaults to '00:00') */
+  startTime?: string;
   status: 'active' | 'inactive';
   totalLimit: number;
   usedCount: number;
@@ -583,8 +601,15 @@ export async function adminLogin(username: string, password: string): Promise<{ 
 // ----- Public Order Tracking API -----
 export interface TrackedOrder {
   id: string;
+  /** Human-readable order number (M1000, A1000, or legacy ORD-...) */
+  order_number?: string;
+  /** Razorpay provider order ID (order_XXXX) */
+  provider_order_id?: string | null;
   customerName: string;
   status: 'pending' | 'paid' | 'processing' | 'shipped' | 'out_for_delivery' | 'delivered' | 'cancelled' | 'failed';
+  /** Payment lifecycle status */
+  payment_status?: 'pending' | 'captured' | 'failed' | 'refunded' | null;
+  paymentMethod?: string;
   date: string;
   items: { name: string; quantity: number; price: number; image?: string }[];
   totalAmount: number;
@@ -606,13 +631,45 @@ export interface TrackedOrder {
   };
 }
 
-export async function trackOrder(orderId: string): Promise<{ success: boolean; order?: TrackedOrder; error?: string }> {
+export async function trackOrder(orderId: string): Promise<{ success: boolean; order?: TrackedOrder; orders?: TrackedOrder[]; error?: string }> {
   const res = await fetch("/api/order_track", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ orderId })
   });
   return res.json();
+}
+
+/** Track all orders by mobile phone number */
+export async function trackOrderByPhone(phone: string): Promise<{ success: boolean; orders?: TrackedOrder[]; error?: string }> {
+  const res = await fetch("/api/order_track", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ phone })
+  });
+  return res.json();
+}
+
+/** Export customers filtered by last order date range as a CSV download */
+export async function exportCustomers(from?: string, to?: string): Promise<void> {
+  const params = new URLSearchParams();
+  if (from) params.set('from', from);
+  if (to) params.set('to', to);
+  const token = Cookies.get('admin_token');
+  const res = await fetch(`/api/customers/export?${params.toString()}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!res.ok) throw new Error('Export failed: ' + res.statusText);
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  const tag = from && to ? `${from}_to_${to}` : 'all';
+  a.download = `customers_${tag}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 export async function trackOrdersByEmail(email: string): Promise<{ success: boolean; orders?: TrackedOrder[]; error?: string }> {

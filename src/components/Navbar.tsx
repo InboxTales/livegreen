@@ -9,6 +9,7 @@ import { useWishlist } from "@/context/WishlistContext";
 const navLinks = [
   { name: "Collection", path: "/shop" },
   { name: "Our Story", path: "/about" },
+  { name: "Track Order", path: "/track-order" },
   { name: "Support", path: "/contact" },
 ];
 

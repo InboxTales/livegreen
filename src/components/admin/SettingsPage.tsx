@@ -686,6 +686,41 @@ export function SettingsPage() {
                         })}
                     </div>
                 </section>
+                {/* SMTP Email Settings */}
+                <section>
+                    <h3 className="text-lg font-bold text-[#1B5E20] mb-4 flex items-center border-b pb-2">📧 Email / SMTP (Order Confirmations)</h3>
+                    <div className="space-y-4 max-w-2xl">
+                        {[
+                            { key: 'smtp_host', label: 'SMTP Host', placeholder: 'e.g. smtp.gmail.com', type: 'text' },
+                            { key: 'smtp_port', label: 'SMTP Port', placeholder: 'e.g. 587 or 465', type: 'text' },
+                            { key: 'smtp_user', label: 'SMTP Username / Email', placeholder: 'e.g. orders@yourstore.com', type: 'text' },
+                            { key: 'smtp_pass', label: 'SMTP Password / App Password', placeholder: 'Enter app password (not your login password)', type: 'password' },
+                            { key: 'smtp_from_name', label: 'From Name', placeholder: 'e.g. LiveGreen Farms', type: 'text' },
+                            { key: 'smtp_from_email', label: 'From Email Address', placeholder: 'e.g. orders@livegreenfarms.in', type: 'text' },
+                        ].map(field => (
+                            <div key={field.key}>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">{field.label}</label>
+                                <div className="flex gap-2">
+                                    <input
+                                        type={field.type}
+                                        value={settings[field.key] || ''}
+                                        onChange={(e) => handleChange(field.key, e.target.value)}
+                                        placeholder={field.placeholder}
+                                        autoComplete="new-password"
+                                        className="flex-1 p-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#3A8E3C]/20 focus:border-[#3A8E3C] outline-none"
+                                    />
+                                    <button onClick={() => handleSave(field.key, settings[field.key])} disabled={saving}
+                                        className="px-4 py-2 bg-[#F5FFF5] text-[#3A8E3C] border border-[#3A8E3C]/20 hover:bg-[#E8F5E9] rounded-lg font-medium transition-colors flex items-center gap-2 disabled:opacity-50">
+                                        <Save className="h-4 w-4" /> Save
+                                    </button>
+                                </div>
+                            </div>
+                        ))}
+                        <p className="text-xs text-gray-400 bg-gray-50 rounded-xl px-4 py-3">
+                            <strong>Gmail users:</strong> Use an App Password (not your regular password). Enable 2FA in Google Account → Security → App Passwords → Mail. Port 587 with TLS, or 465 with SSL.
+                        </p>
+                    </div>
+                </section>
 
             </div>
         </div>

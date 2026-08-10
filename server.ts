@@ -10,6 +10,7 @@ import { ICarryClient } from "./src/lib/icarry.js";
 import multer from "multer";
 import fs from "fs";
 import crypto from "crypto";
+import nodemailer from "nodemailer";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -80,6 +81,148 @@ const logAudit = async (admin: string, action: string, type: string, id: string,
     [admin, action, type, id, details, ip, new Date().toISOString()]
   );
 };
+
+// Generate a sequential, collision-safe application order number.
+// Manual orders: M1000, M1001, M1002 ...
+// Website orders: A1000, A1001, A1002 ...
+// Uses the order_sequences table with atomic UPDATE RETURNING inside the caller's transaction.
+// Never reuses numbers even if an order is cancelled/deleted.
+async function generateSequentialOrderNumber(
+  type: 'M' | 'A',
+  conn: any
+): Promise<string> {
+  // Atomically increment and retrieve the next value for this sequence type.
+  const [rows]: any = await conn.query(
+    "UPDATE order_sequences SET next_val = next_val + 1 WHERE seq_type = ? RETURNING next_val",
+    [type]
+  );
+  const nextVal: number = rows[0]?.next_val;
+  if (!nextVal) throw new Error(`Failed to generate order sequence for type ${type}`);
+  return `${type}${nextVal}`;
+}
+
+// Legacy random order number generator — kept only for backward compat reference.
+// New code must use generateSequentialOrderNumber.
+function _legacyGenerateOrderNumber(): string {
+  const now = new Date();
+  const datePart = now.toISOString().slice(0, 10).replace(/-/g, '');
+  const randPart = Math.random().toString(36).substring(2, 9).toUpperCase();
+  return `ORD-${datePart}-${randPart}`;
+}
+
+// ── Email Confirmation ──────────────────────────────────────────────────────
+// Sends an order confirmation email using SMTP settings stored in app_settings.
+// Returns true if sent, false if skipped (no SMTP config) or failed.
+// IMPORTANT: This must never throw — email failure must not affect order success.
+async function sendOrderConfirmationEmail(order: {
+  order_number: string;
+  customerName: string;
+  email: string;
+  date: string;
+  items: any[];
+  totalAmount: number;
+  paymentMethod: string;
+  status: string;
+  couponCode?: string | null;
+  couponDiscount?: number;
+  adminDiscount?: number;
+}): Promise<boolean> {
+  try {
+    const smtpHost = await getSetting('smtp_host');
+    const smtpPort = await getSetting('smtp_port');
+    const smtpUser = await getSetting('smtp_user');
+    const smtpPass = await getSetting('smtp_pass');
+    const fromName = await getSetting('smtp_from_name') || 'Live Green Honey';
+    const fromEmail = await getSetting('smtp_from_email') || smtpUser;
+
+    if (!smtpHost || !smtpUser || !smtpPass || !order.email) {
+      console.log(`[Email] SMTP not configured — skipping confirmation for ${order.order_number}`);
+      return false;
+    }
+
+    const transporter = nodemailer.createTransport({
+      host: smtpHost,
+      port: parseInt(smtpPort || '587'),
+      secure: parseInt(smtpPort || '587') === 465,
+      auth: { user: smtpUser, pass: smtpPass },
+    });
+
+    const itemsHtml = (order.items || []).map((item: any) =>
+      `<tr>
+        <td style="padding:8px 0;border-bottom:1px solid #f0f0f0">${item.name}</td>
+        <td style="padding:8px 0;border-bottom:1px solid #f0f0f0;text-align:center">${item.quantity}</td>
+        <td style="padding:8px 0;border-bottom:1px solid #f0f0f0;text-align:right">₹${(item.price * item.quantity).toLocaleString('en-IN')}</td>
+      </tr>`
+    ).join('');
+
+    const discountRows = [
+      order.couponCode && order.couponDiscount ? `<tr><td style="padding:4px 0;color:#666">Promo (${order.couponCode})</td><td></td><td style="text-align:right;color:#16a34a">-₹${order.couponDiscount.toLocaleString('en-IN')}</td></tr>` : '',
+      order.adminDiscount ? `<tr><td style="padding:4px 0;color:#666">Admin Discount</td><td></td><td style="text-align:right;color:#16a34a">-₹${order.adminDiscount.toLocaleString('en-IN')}</td></tr>` : '',
+    ].filter(Boolean).join('');
+
+    const orderDate = new Date(order.date).toLocaleDateString('en-IN', { dateStyle: 'long' });
+    const paymentLabel = order.paymentMethod === 'razorpay' ? 'Online Payment' : order.paymentMethod === 'cod' ? 'Cash on Delivery' : order.paymentMethod;
+
+    const html = `
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>Order Confirmed</title></head>
+<body style="font-family:Arial,sans-serif;background:#f9f9f9;margin:0;padding:0">
+  <div style="max-width:600px;margin:30px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.08)">
+    <div style="background:#1B5E20;padding:32px;text-align:center">
+      <h1 style="color:#fff;margin:0;font-size:24px">Order Confirmed! 🍯</h1>
+      <p style="color:rgba(255,255,255,0.8);margin:8px 0 0">Thank you for your order, ${order.customerName}!</p>
+    </div>
+    <div style="padding:32px">
+      <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:16px;margin-bottom:24px">
+        <p style="margin:0;font-size:13px;color:#166534">Order Number</p>
+        <p style="margin:4px 0 0;font-size:22px;font-weight:bold;color:#14532d;font-family:monospace">${order.order_number}</p>
+        <p style="margin:4px 0 0;font-size:12px;color:#16a34a">Placed on ${orderDate} &nbsp;·&nbsp; ${paymentLabel}</p>
+      </div>
+      <h3 style="color:#1B5E20;border-bottom:2px solid #f0f0f0;padding-bottom:8px">Items Ordered</h3>
+      <table style="width:100%;border-collapse:collapse;font-size:14px">
+        <thead>
+          <tr style="color:#666">
+            <th style="text-align:left;padding-bottom:8px">Item</th>
+            <th style="text-align:center;padding-bottom:8px">Qty</th>
+            <th style="text-align:right;padding-bottom:8px">Price</th>
+          </tr>
+        </thead>
+        <tbody>${itemsHtml}</tbody>
+        <tfoot>
+          ${discountRows}
+          <tr>
+            <td colspan="2" style="padding-top:12px;font-weight:bold;font-size:16px">Total</td>
+            <td style="text-align:right;padding-top:12px;font-weight:bold;font-size:18px;color:#1B5E20">₹${order.totalAmount.toLocaleString('en-IN')}</td>
+          </tr>
+        </tfoot>
+      </table>
+      <div style="margin-top:28px;padding:16px;background:#fffbeb;border-radius:8px;font-size:13px;color:#92400e">
+        💚 Thank you for choosing Live Green Honey. Your order will be processed shortly.
+      </div>
+    </div>
+    <div style="background:#f9f9f9;padding:20px;text-align:center;font-size:12px;color:#999">
+      Live Green Honey &nbsp;·&nbsp; Questions? Reply to this email or visit our website.
+    </div>
+  </div>
+</body>
+</html>`;
+
+    await transporter.sendMail({
+      from: `"${fromName}" <${fromEmail}>`,
+      to: order.email,
+      subject: `Order Confirmed: ${order.order_number} — Live Green Honey`,
+      html,
+    });
+
+    console.log(`[Email] Confirmation sent for ${order.order_number} to ${order.email}`);
+    return true;
+  } catch (err: any) {
+    // Email failure must never affect the order — just log it.
+    console.error(`[Email] Failed to send confirmation for order ${order.order_number}:`, err.message);
+    return false;
+  }
+}
 
 // Helper to fetch iCarry Client
 const getICarryClient = async () => {
@@ -605,7 +748,7 @@ async function initDB() {
     }
   }
 
-  // Ensure orders table has iCarry columns
+  // Ensure orders table has all required columns (Migration support)
   const [orderColumnRows]: any = await pool.query("SELECT column_name FROM information_schema.columns WHERE table_name = 'orders'");
   const orderColumnNames = orderColumnRows.map((c: any) => c.column_name.toLowerCase());
   const expectedOrderCols = [
@@ -618,16 +761,49 @@ async function initDB() {
     { name: 'promoCodeId', type: 'INTEGER' },
     { name: 'couponCode', type: 'VARCHAR(50)' },
     { name: 'couponDiscount', type: 'INTEGER DEFAULT 0' },
-    { name: 'adminDiscount', type: 'INTEGER DEFAULT 0' }
+    { name: 'adminDiscount', type: 'INTEGER DEFAULT 0' },
+    // order_number: human-readable sequential order number (M1000, A1000 format).
+    // Legacy records have ORD-... or NULL; UI falls back to id.
+    { name: 'order_number', type: "VARCHAR(50) DEFAULT NULL" },
+    // payment_status: payment-provider lifecycle state separate from the order lifecycle.
+    { name: 'payment_status', type: "VARCHAR(50) DEFAULT 'pending'" },
+    // provider_order_id: Razorpay's order_XXXX ID (null for manual/COD orders).
+    { name: 'provider_order_id', type: 'VARCHAR(100) DEFAULT NULL' },
   ];
 
   for (const col of expectedOrderCols) {
     if (!orderColumnNames.includes(col.name.toLowerCase())) {
+      console.log(`Adding missing column ${col.name} to orders table...`);
       await pool.query(`ALTER TABLE orders ADD COLUMN ${col.name} ${col.type}`);
     }
   }
 
-  // Ensure promo_codes table has limit/usage columns
+  // Backfill provider_order_id from id for existing Razorpay orders (id starts with 'order_')
+  await pool.query(
+    "UPDATE orders SET provider_order_id = id WHERE provider_order_id IS NULL AND id LIKE 'order_%'"
+  );
+
+  // Create order_sequences table for collision-safe sequential order numbers.
+  // Atomic UPDATE RETURNING ensures no two concurrent requests get the same number.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS order_sequences (
+      seq_type VARCHAR(1) PRIMARY KEY,
+      next_val INTEGER NOT NULL DEFAULT 999
+    )
+  `);
+  // Seed starting values (999 so first number returned after increment is 1000)
+  await pool.query("INSERT INTO order_sequences (seq_type, next_val) VALUES ('M', 999) ON CONFLICT (seq_type) DO NOTHING");
+  await pool.query("INSERT INTO order_sequences (seq_type, next_val) VALUES ('A', 999) ON CONFLICT (seq_type) DO NOTHING");
+
+  // Unique index on order_number (NULLs are excluded from uniqueness in Postgres)
+  try {
+    await pool.query("CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_order_number ON orders (order_number) WHERE order_number IS NOT NULL");
+  } catch (e: any) {
+    // Index may already exist or DB doesn't support WHERE in CREATE INDEX — non-fatal
+    console.warn('[DB] Could not create unique index on order_number:', e.message);
+  }
+
+  // Ensure promo_codes table has all required columns
   const [promoColumnRows]: any = await pool.query("SELECT column_name FROM information_schema.columns WHERE table_name = 'promo_codes'");
   const promoColumnNames = promoColumnRows.map((c: any) => c.column_name.toLowerCase());
   const expectedPromoCols = [
@@ -635,9 +811,14 @@ async function initDB() {
     { name: 'usedCount', type: 'INT DEFAULT 0' },
     { name: 'oneTimePerUser', type: 'INTEGER DEFAULT 0' },
     { name: 'is_private', type: 'INTEGER DEFAULT 0' },
+    // startDate: date from which promo becomes active (NULL = active immediately)
+    { name: 'startDate', type: 'VARCHAR(100) DEFAULT NULL' },
+    // startTime: HH:MM time component (defaults to 00:00 if startDate set without time)
+    { name: 'startTime', type: "VARCHAR(10) DEFAULT '00:00'" },
   ];
   for (const col of expectedPromoCols) {
     if (!promoColumnNames.includes(col.name.toLowerCase())) {
+      console.log(`Adding missing column ${col.name} to promo_codes table...`);
       await pool.query(`ALTER TABLE promo_codes ADD COLUMN ${col.name} ${col.type}`);
     }
   }
@@ -660,7 +841,14 @@ async function initDB() {
     ['icarry_pickup_address_id', process.env.ICARRY_PICKUP_ADDRESS_ID || '84128'],
     ['icarry_origin_pincode', process.env.ICARRY_ORIGIN_PINCODE || '400071'],
     ['icarry_preferred_courier', process.env.ICARRY_PREFERRED_COURIER || ''],
-    ['hf_api_key', process.env.HF_API_KEY || '']
+    ['hf_api_key', process.env.HF_API_KEY || ''],
+    // SMTP Email settings for order confirmation emails
+    ['smtp_host', process.env.SMTP_HOST || ''],
+    ['smtp_port', process.env.SMTP_PORT || '587'],
+    ['smtp_user', process.env.SMTP_USER || ''],
+    ['smtp_pass', process.env.SMTP_PASS || ''],
+    ['smtp_from_name', process.env.SMTP_FROM_NAME || 'Live Green Honey'],
+    ['smtp_from_email', process.env.SMTP_FROM_EMAIL || ''],
   ];
 
   for (const [key, val] of defaultSettings) {
@@ -1265,11 +1453,11 @@ async function startServer() {
   });
 
   app.post("/api/promo_codes", verifyAdmin, async (req, res) => {
-    const { code, discountType, discountValue, minSpend, expiryDate, totalLimit, oneTimePerUser, is_private, status } = req.body;
+    const { code, discountType, discountValue, minSpend, expiryDate, startDate, startTime, totalLimit, oneTimePerUser, is_private, status } = req.body;
     try {
       const [info]: any = await pool.query(
-        "INSERT INTO promo_codes (code, discountType, discountValue, minSpend, expiryDate, status, totalLimit, oneTimePerUser, is_private) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        [code.toUpperCase(), discountType, discountValue, minSpend || 0, expiryDate || null, status || 'active', totalLimit || 0, oneTimePerUser ? 1 : 0, is_private ? 1 : 0]
+        "INSERT INTO promo_codes (code, discountType, discountValue, minSpend, expiryDate, startDate, startTime, status, totalLimit, oneTimePerUser, is_private) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        [code.toUpperCase(), discountType, discountValue, minSpend || 0, expiryDate || null, startDate || null, startTime || '00:00', status || 'active', totalLimit || 0, oneTimePerUser ? 1 : 0, is_private ? 1 : 0]
       );
       res.json({ id: info.insertId });
     } catch (e: any) {
@@ -1284,11 +1472,11 @@ async function startServer() {
   });
 
   app.put("/api/promo_codes/:id", verifyAdmin, async (req, res) => {
-    const { code, discountType, discountValue, minSpend, expiryDate, status, totalLimit, oneTimePerUser, is_private } = req.body;
+    const { code, discountType, discountValue, minSpend, expiryDate, startDate, startTime, status, totalLimit, oneTimePerUser, is_private } = req.body;
     try {
       await pool.query(
-        "UPDATE promo_codes SET code = ?, discountType = ?, discountValue = ?, minSpend = ?, expiryDate = ?, status = ?, totalLimit = ?, oneTimePerUser = ?, is_private = ? WHERE id = ?",
-        [code.toUpperCase(), discountType, discountValue, minSpend || 0, expiryDate || null, status || 'active', totalLimit || 0, oneTimePerUser ? 1 : 0, is_private ? 1 : 0, req.params.id]
+        "UPDATE promo_codes SET code = ?, discountType = ?, discountValue = ?, minSpend = ?, expiryDate = ?, startDate = ?, startTime = ?, status = ?, totalLimit = ?, oneTimePerUser = ?, is_private = ? WHERE id = ?",
+        [code.toUpperCase(), discountType, discountValue, minSpend || 0, expiryDate || null, startDate || null, startTime || '00:00', status || 'active', totalLimit || 0, oneTimePerUser ? 1 : 0, is_private ? 1 : 0, req.params.id]
       );
       res.json({ success: true });
     } catch (e: any) {
@@ -1324,6 +1512,17 @@ async function startServer() {
 
     if (!promo) return res.status(404).json({ error: "Invalid promo code" });
     if (promo.status !== "active") return res.status(400).json({ error: "Promo code is no longer active" });
+
+    // Check start datetime: promo is only active at/after start_datetime
+    if (promo.startDate) {
+      const startTime = promo.startTime || '00:00';
+      const startDatetime = new Date(`${promo.startDate}T${startTime}:00`);
+      if (new Date() < startDatetime) {
+        return res.status(400).json({ error: `Promo code is not active yet. Starts on ${startDatetime.toLocaleString('en-IN')}` });
+      }
+    }
+
+    // Check expiry
     if (promo.expiryDate && new Date(promo.expiryDate) < new Date()) return res.status(400).json({ error: "Promo code has expired" });
     if (promo.minSpend > 0 && cartTotal < promo.minSpend) return res.status(400).json({ error: `Minimum spend of ₹${promo.minSpend} required` });
 
@@ -1514,13 +1713,18 @@ async function startServer() {
       return res.status(400).json({ success: false, error: "At least one item is required" });
     }
 
-    // Generate a unique manual order ID
+    // DB PK keeps MAN- prefix for backward compatibility with existing queries.
+    // order_number uses sequential M-series (M1000, M1001, ...).
     const orderId = `MAN-${Date.now()}`;
+    let orderNumber = ''; // assigned inside transaction via generateSequentialOrderNumber
     const orderDate = date || new Date().toISOString();
 
     const connection = await pool.getConnection();
     try {
       await connection.beginTransaction();
+
+      // Generate sequential M-series order number inside the transaction
+      orderNumber = await generateSequentialOrderNumber('M', connection);
 
       // Upsert customer record
       const [existingCust]: any = await connection.query(
@@ -1546,18 +1750,20 @@ async function startServer() {
         );
       }
 
-      // Insert order row — status 'paid' since this is a manually confirmed order
+      // Insert order row — status 'paid' since this is a manually confirmed order.
+      // payment_status 'captured' since admin explicitly confirmed payment.
+      // provider_order_id = null for manual orders (no Razorpay involved).
       await connection.query(
         `INSERT INTO orders
-          (id, customerName, email, phone, address, city, state, zip,
-           items, totalAmount, paymentMethod, paymentId, status, date,
+          (id, order_number, provider_order_id, customerName, email, phone, address, city, state, zip,
+           items, totalAmount, paymentMethod, paymentId, status, payment_status, date,
            icarry_shipment_id, icarry_awb, icarry_tracking_url, icarry_status,
            promoCodeId, couponCode, couponDiscount, adminDiscount)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
-          orderId, customerName, email, phone, address, city, state, zip,
+          orderId, orderNumber, null, customerName, email, phone, address, city, state, zip,
           JSON.stringify(items), totalAmount, paymentMethod,
-          null, 'paid', orderDate,
+          null, 'paid', 'captured', orderDate,
           null, null, null, null,
           null, null, 0, Number(adminDiscount) || 0,
         ]
@@ -1566,7 +1772,7 @@ async function startServer() {
       // Create notification
       await connection.query(
         "INSERT INTO notifications (type, title, message, priority, created_at) VALUES (?, ?, ?, ?, ?)",
-        ['order', 'Manual Order Created', `Manual order ${orderId} from ${customerName} for ₹${totalAmount}`, 'high', new Date().toISOString()]
+        ['order', 'Manual Order Created', `Order ${orderNumber} from ${customerName} for ₹${totalAmount}`, 'high', new Date().toISOString()]
       );
 
       await connection.commit();
@@ -1587,7 +1793,15 @@ async function startServer() {
         }
       }
 
-      res.json({ success: true, orderId });
+      // Send order confirmation email (non-blocking — failure doesn't affect order)
+      sendOrderConfirmationEmail({
+        order_number: orderNumber,
+        customerName, email, date: orderDate,
+        items, totalAmount, paymentMethod,
+        status: 'paid',
+      }).catch(() => {});
+
+      res.json({ success: true, orderId, orderNumber });
     } catch (e: any) {
       await connection.rollback();
       console.error("Failed to create manual order:", e);
@@ -1708,17 +1922,118 @@ async function startServer() {
 
 
 
-  // Customers
+  // Customers — includes last_order_date, last_order_number, last_order_amount aggregated from orders
   app.get("/api/customers", verifyAdmin, async (req, res) => {
-    const [customers]: any = await pool.query("SELECT * FROM customers ORDER BY totalSpent DESC");
-    // Normalize fields to avoid null crashing frontend string methods
-    const normalized = (customers as any[]).map((c: any) => ({
-      ...c,
-      name: c.name != null ? String(c.name) : '',
-      email: c.email != null ? String(c.email) : '',
-      phone: c.phone != null ? String(c.phone) : '',
-    }));
-    res.json(normalized);
+    try {
+      const [customers]: any = await pool.query(`
+        SELECT
+          c.*,
+          MAX(o.date) AS last_order_date,
+          MAX(o.order_number) FILTER (WHERE o.date = (
+            SELECT MAX(o2.date) FROM orders o2 WHERE o2.email = c.email
+          )) AS last_order_number,
+          MAX(o.totalAmount) FILTER (WHERE o.date = (
+            SELECT MAX(o2.date) FROM orders o2 WHERE o2.email = c.email
+          )) AS last_order_amount
+        FROM customers c
+        LEFT JOIN orders o ON LOWER(o.email) = LOWER(c.email)
+        GROUP BY c.id
+        ORDER BY c.totalSpent DESC
+      `);
+      const normalized = (customers as any[]).map((c: any) => ({
+        ...c,
+        name: c.name != null ? String(c.name) : '',
+        email: c.email != null ? String(c.email) : '',
+        phone: c.phone != null ? String(c.phone) : '',
+        last_order_date: c.last_order_date || null,
+        last_order_number: c.last_order_number || null,
+        last_order_amount: c.last_order_amount ? Number(c.last_order_amount) : null,
+      }));
+      res.json(normalized);
+    } catch (e: any) {
+      // Fallback: if the FILTER syntax isn't supported (older Postgres), return without aggregation
+      console.warn('[Customers] Aggregation query failed, falling back to simple query:', e.message);
+      const [customers]: any = await pool.query("SELECT * FROM customers ORDER BY totalSpent DESC");
+      const normalized = (customers as any[]).map((c: any) => ({
+        ...c,
+        name: c.name != null ? String(c.name) : '',
+        email: c.email != null ? String(c.email) : '',
+        phone: c.phone != null ? String(c.phone) : '',
+      }));
+      res.json(normalized);
+    }
+  });
+
+  // Customer Export — filter by last order date range, return CSV
+  app.get("/api/customers/export", verifyAdmin, async (req, res) => {
+    const { from, to } = req.query as { from?: string; to?: string };
+    try {
+      // Build a query that includes last_order_date for each customer
+      let query = `
+        SELECT
+          c.name, c.email, c.phone, c.ordersCount, c.totalSpent,
+          MAX(o.date) AS last_order_date,
+          STRING_AGG(DISTINCT o.order_number, ', ' ORDER BY o.date DESC) AS all_order_numbers
+        FROM customers c
+        LEFT JOIN orders o ON LOWER(o.email) = LOWER(c.email)
+        GROUP BY c.id, c.name, c.email, c.phone, c.ordersCount, c.totalSpent
+      `;
+      const params: any[] = [];
+
+      if (from && to) {
+        // Filter: MAX(order.date) must fall within the range
+        query = `
+          SELECT sub.* FROM (
+            SELECT
+              c.name, c.email, c.phone, c.ordersCount, c.totalSpent,
+              MAX(o.date) AS last_order_date,
+              (
+                SELECT o2.order_number FROM orders o2
+                WHERE LOWER(o2.email) = LOWER(c.email)
+                ORDER BY o2.date DESC LIMIT 1
+              ) AS last_order_number,
+              (
+                SELECT o3.totalAmount FROM orders o3
+                WHERE LOWER(o3.email) = LOWER(c.email)
+                ORDER BY o3.date DESC LIMIT 1
+              ) AS last_order_amount
+            FROM customers c
+            LEFT JOIN orders o ON LOWER(o.email) = LOWER(c.email)
+            GROUP BY c.id, c.name, c.email, c.phone, c.ordersCount, c.totalSpent
+          ) sub
+          WHERE sub.last_order_date IS NOT NULL
+            AND SUBSTRING(sub.last_order_date, 1, 10) >= ?
+            AND SUBSTRING(sub.last_order_date, 1, 10) <= ?
+          ORDER BY sub.last_order_date DESC
+        `;
+        params.push(from, to);
+      } else {
+        query += ' ORDER BY last_order_date DESC NULLS LAST';
+      }
+
+      const [rows]: any = await pool.query(query, params);
+
+      const headers = ['Customer Name', 'Email', 'Mobile Number', 'Last Order Number', 'Last Order Date', 'Last Order Amount', 'Total Orders', 'Total Order Value (₹)'];
+      const csvRows = rows.map((r: any) => [
+        `"${(r.name || '').replace(/"/g, '""')}"`,
+        `"${(r.email || '').replace(/"/g, '""')}"`,
+        `"${(r.phone || '').replace(/"/g, '""')}"`,
+        `"${(r.last_order_number || '').replace(/"/g, '""')}"`,
+        r.last_order_date ? `"${r.last_order_date.substring(0, 10)}"` : '""',
+        r.last_order_amount != null ? r.last_order_amount : '',
+        r.ordersCount || 0,
+        r.totalSpent || 0,
+      ].join(','));
+
+      const csv = [headers.join(','), ...csvRows].join('\n');
+      const dateTag = from && to ? `${from}_to_${to}` : 'all';
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="customers_${dateTag}.csv"`);
+      res.send('\uFEFF' + csv); // BOM for Excel UTF-8 compatibility
+    } catch (e: any) {
+      console.error('[Customers Export] Error:', e.message);
+      res.status(500).json({ error: 'Export failed: ' + e.message });
+    }
   });
 
   // ═══════════════ EXPENSE CATEGORIES ═══════════════
@@ -1862,11 +2177,16 @@ async function startServer() {
         key_secret: rzpSecret,
       });
 
-      // 3. Create Razorpay order
+      // 3. Generate sequential A-series application order number before creating Razorpay order.
+      // rzpOrder.id (order_XXX) = DB PK, used for payment verification callbacks.
+      // appOrderNumber (A1000, A1001...) = customer-facing identifier, stored in order_number.
+      // provider_order_id mirrors rzpOrder.id for display/reconciliation without touching the PK.
+      const appOrderNumber = await generateSequentialOrderNumber('A', pool);
+
       const rzpOrder = await razorpay.orders.create({
         amount: Math.round(finalAmount * 100), // Razorpay expects amount in paise
         currency: "INR",
-        receipt: `receipt_${Date.now()}`,
+        receipt: appOrderNumber, // Use our order_number as the Razorpay receipt for reconciliation
         notes: {
           customer_name: customerInfo.name,
           customer_email: customerInfo.email
@@ -1874,8 +2194,8 @@ async function startServer() {
       });
 
       await pool.query(
-        "INSERT INTO orders (id, customerName, email, phone, address, city, state, zip, items, totalAmount, paymentMethod, paymentId, status, date, promoCodeId, couponCode, couponDiscount) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        [rzpOrder.id, customerInfo.name, customerInfo.email, customerInfo.phone, customerInfo.address, customerInfo.city, customerInfo.state, customerInfo.zip, JSON.stringify(items), finalAmount, 'razorpay', null, 'pending', new Date().toISOString(), promoCodeId, promoCode ? promoCode.toUpperCase() : null, discount]
+        "INSERT INTO orders (id, order_number, provider_order_id, customerName, email, phone, address, city, state, zip, items, totalAmount, paymentMethod, paymentId, status, payment_status, date, promoCodeId, couponCode, couponDiscount) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        [rzpOrder.id, appOrderNumber, rzpOrder.id, customerInfo.name, customerInfo.email, customerInfo.phone, customerInfo.address, customerInfo.city, customerInfo.state, customerInfo.zip, JSON.stringify(items), finalAmount, 'razorpay', null, 'pending', 'pending', new Date().toISOString(), promoCodeId, promoCode ? promoCode.toUpperCase() : null, discount]
       );
 
       res.json({
@@ -1926,9 +2246,9 @@ async function startServer() {
         try {
           await connection.beginTransaction();
 
-          // 3. Update order status to 'paid'
+          // 3. Update order status to 'paid' and payment_status to 'captured'
           await connection.query(
-            "UPDATE orders SET status = 'paid', paymentId = ? WHERE id = ?",
+            "UPDATE orders SET status = 'paid', payment_status = 'captured', paymentId = ? WHERE id = ?",
             [razorpay_payment_id, razorpay_order_id]
           );
           
@@ -1985,6 +2305,22 @@ async function startServer() {
         // error onto the order row so it's visible/retryable in admin.
         await bookOrderShipment(order);
 
+        // 8. Send order confirmation email (non-blocking)
+        const confirmedItems = JSON.parse(order.items || '[]');
+        sendOrderConfirmationEmail({
+          order_number: order.order_number || order.id,
+          customerName: order.customerName,
+          email: order.email,
+          date: order.date,
+          items: confirmedItems,
+          totalAmount: order.totalAmount,
+          paymentMethod: order.paymentMethod,
+          status: 'paid',
+          couponCode: order.couponCode,
+          couponDiscount: order.couponDiscount,
+          adminDiscount: order.adminDiscount,
+        }).catch(() => {});
+
         res.json({ success: true });
       } else {
         console.warn(`[Payment] Signature mismatch for order ${razorpay_order_id}`);
@@ -2009,20 +2345,31 @@ async function startServer() {
     } catch (e) { res.status(500).json({ error: 'Backup failed' }); }
   });
 
-  // Order Tracking API
+  // Order Tracking API — accepts orderId (order_number or legacy id), email, or phone
   app.post("/api/order_track", async (req, res) => {
-    const { orderId, email } = req.body;
+    const { orderId, email, phone } = req.body;
     try {
       let query = "SELECT * FROM orders WHERE ";
-      let params = [];
+      let params: any[] = [];
       if (orderId) {
-        query += "id = ?";
-        params.push(orderId);
+        // Search by order_number (M1000, A1000, ORD-...) OR legacy DB id (order_..., MAN-...)
+        const normalized = String(orderId).trim().toUpperCase();
+        query += "(UPPER(order_number) = ? OR id = ?)";
+        params.push(normalized, orderId.trim());
       } else if (email) {
-        query += "email = ?";
+        query += "LOWER(email) = LOWER(?)";
         params.push(email);
+      } else if (phone) {
+        // Normalize phone: strip non-digits, take last 10 digits for matching
+        const normalizedPhone = String(phone).replace(/[^0-9]/g, '').slice(-10);
+        if (normalizedPhone.length < 7) {
+          return res.status(400).json({ success: false, error: "Invalid mobile number" });
+        }
+        // Match stored phone ending with the normalized digits
+        query += "phone LIKE ?";
+        params.push(`%${normalizedPhone}`);
       } else {
-        return res.status(400).json({ success: false, error: "Order ID or Email required" });
+        return res.status(400).json({ success: false, error: "Order Number, Email or Mobile required" });
       }
 
       const [rows]: any = await pool.query(query, params);
@@ -2089,12 +2436,17 @@ async function startServer() {
 
         return {
           id: row.id,
+          order_number: row.order_number || row.id,
+          provider_order_id: row.provider_order_id || null,
           customerName: row.customerName,
           status: row.status,
+          payment_status: row.payment_status || null,
           date: row.date,
           totalAmount: row.totalAmount,
+          // Public response: omit full address, email for privacy
           city: row.city,
           state: row.state,
+          paymentMethod: row.paymentMethod,
           items: JSON.parse(row.items || "[]"),
           tracking
         };

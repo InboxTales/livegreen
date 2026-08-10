@@ -70,7 +70,7 @@ export function PromoCodesTab() {
                     <p className="text-gray-500 mt-1">Manage discounts and promotional campaigns.</p>
                 </div>
                 <Button
-                    onClick={() => { setIsEditing(true); setCurrentItem({ discountType: 'percentage', discountValue: 10, minSpend: 0, status: 'active', totalLimit: 0, oneTimePerUser: false, is_private: false }); }}
+                    onClick={() => { setIsEditing(true); setCurrentItem({ discountType: 'percentage', discountValue: 10, minSpend: 0, status: 'active', totalLimit: 0, oneTimePerUser: false, is_private: false, startDate: '', startTime: '00:00' }); }}
                     className="bg-[#1B5E20] hover:bg-[#144a18] text-white rounded-xl px-6 h-12 shadow-lg shadow-green-900/20"
                 >
                     <Plus className="mr-2 h-5 w-5" /> Create Promo Code
@@ -153,6 +153,29 @@ export function PromoCodesTab() {
                                     onChange={(e) => setCurrentItem({ ...currentItem, totalLimit: parseInt(e.target.value) })}
                                     className="h-12 rounded-xl"
                                 />
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div className="space-y-4">
+                                <label className="block text-sm font-bold text-gray-700">Start Date (Optional)</label>
+                                <Input
+                                    type="date"
+                                    value={currentItem.startDate || ""}
+                                    onChange={(e) => setCurrentItem({ ...currentItem, startDate: e.target.value })}
+                                    className="h-12 rounded-xl"
+                                />
+                            </div>
+                            <div className="space-y-4">
+                                <label className="block text-sm font-bold text-gray-700">Start Time</label>
+                                <Input
+                                    type="time"
+                                    value={currentItem.startTime || '00:00'}
+                                    onChange={(e) => setCurrentItem({ ...currentItem, startTime: e.target.value })}
+                                    className="h-12 rounded-xl"
+                                    disabled={!currentItem.startDate}
+                                />
+                                <p className="text-xs text-gray-400">Promo becomes active at this date &amp; time. Leave empty = active immediately.</p>
                             </div>
                         </div>
 
@@ -279,7 +302,10 @@ export function PromoCodesTab() {
                                     </div>
 
                                     <div className="flex justify-between items-center text-[10px] text-gray-400 pt-2">
-                                        <span>Expires: {item.expiryDate ? new Date(item.expiryDate).toLocaleDateString() : 'Never'}</span>
+                                        {item.startDate && (
+                                            <span>Active from: {new Date(`${item.startDate}T${item.startTime || '00:00'}:00`).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}</span>
+                                        )}
+                                        <span className="ml-auto">Expires: {item.expiryDate ? new Date(item.expiryDate).toLocaleDateString() : 'Never'}</span>
                                     </div>
                                 </div>
                             </motion.div>
