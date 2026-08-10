@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from "react";
 import { getOrders, updateOrderStatus, bookOrderShipment, applyAdminDiscount, Order } from "@/lib/api";
 import { generateInvoice } from "@/lib/generateInvoice";
 import { Input } from "@/components/ui/input";
-import { Search, ChevronDown, FileText, Plus, Download, Calendar, X } from "lucide-react";
+import { Search, ChevronDown, FileText, Plus, Download, Calendar, X, RotateCw } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { CreateManualOrderModal } from "@/components/admin/CreateManualOrderModal";
 
@@ -257,19 +257,24 @@ export function OrdersTab() {
                     <h2 className="text-3xl font-bold text-gray-900 font-serif">Orders</h2>
                     <p className="text-gray-500 mt-1">Manage and track customer orders here.</p>
                 </div>
-                <div className="flex gap-2 text-sm font-medium flex-wrap">
-                    <button onClick={() => setShowCreateModal(true)} className="px-4 py-2 bg-[#1B5E20] text-white shadow-sm rounded-xl hover:bg-[#164a1a] flex items-center gap-2 transition font-semibold">
-                        <Plus className="w-4 h-4" /> Create Manual Order
+                <div className="flex gap-3 text-sm font-semibold flex-wrap">
+                    <button
+                        onClick={() => setShowCreateModal(true)}
+                        className="px-5 py-2.5 bg-[#1B5E20] text-white shadow-md shadow-green-900/10 rounded-xl hover:bg-[#144a18] active:scale-95 flex items-center gap-2 transition font-bold"
+                    >
+                        <Plus className="w-4 h-4 stroke-[2.5]" /> Create Manual Order
                     </button>
                     <button
                         onClick={() => { setExportPreset(datePreset); setExportCustomFrom(customFrom); setExportCustomTo(customTo); setShowExportModal(true); }}
-                        className="px-4 py-2 border border-gray-200 bg-white shadow-sm rounded-xl hover:bg-gray-50 flex items-center gap-2 transition"
+                        className="px-5 py-2.5 bg-white border-2 border-emerald-800/20 text-[#1B5E20] shadow-sm rounded-xl hover:bg-emerald-50 hover:border-emerald-700 active:scale-95 flex items-center gap-2 transition font-bold"
                     >
-                        <Download className="w-4 h-4" /> Export CSV
+                        <Download className="w-4 h-4 text-[#1B5E20] stroke-[2.5]" /> Export CSV
                     </button>
-                    <button onClick={() => loadOrders()} className="px-4 py-2 border border-gray-200 bg-white shadow-sm rounded-xl hover:bg-gray-50 flex items-center gap-2 transition">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
-                        Refresh &amp; Sync iCarry
+                    <button
+                        onClick={() => loadOrders()}
+                        className="px-5 py-2.5 bg-white border-2 border-emerald-800/20 text-[#1B5E20] shadow-sm rounded-xl hover:bg-emerald-50 hover:border-emerald-700 active:scale-95 flex items-center gap-2 transition font-bold"
+                    >
+                        <RotateCw className="w-4 h-4 text-[#1B5E20] stroke-[2.5]" /> Refresh &amp; Sync iCarry
                     </button>
                 </div>
             </div>
@@ -291,11 +296,11 @@ export function OrdersTab() {
                 <div className="relative flex-shrink-0">
                     <button
                         onClick={() => setShowPresetMenu(v => !v)}
-                        className="h-12 px-4 flex items-center gap-2 bg-white border border-gray-200 shadow-sm rounded-xl text-sm text-gray-700 hover:bg-gray-50 transition min-w-[170px]"
+                        className={`h-12 px-4 flex items-center gap-2 rounded-xl text-sm font-bold transition shadow-sm min-w-[170px] ${datePreset !== 'all' ? 'bg-[#1B5E20] text-white border-2 border-[#1B5E20]' : 'bg-white text-gray-800 border-2 border-gray-200 hover:border-gray-300'}`}
                     >
-                        <Calendar className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                        <Calendar className={`w-4 h-4 flex-shrink-0 ${datePreset !== 'all' ? 'text-white' : 'text-[#1B5E20]'}`} />
                         <span className="flex-1 text-left truncate">{activeDateLabel}</span>
-                        <ChevronDown className={`w-4 h-4 text-gray-400 flex-shrink-0 transition-transform ${showPresetMenu ? 'rotate-180' : ''}`} />
+                        <ChevronDown className={`w-4 h-4 flex-shrink-0 transition-transform ${showPresetMenu ? 'rotate-180' : ''}`} />
                     </button>
                     <AnimatePresence>
                         {showPresetMenu && datePreset !== 'custom' && (
@@ -352,7 +357,7 @@ export function OrdersTab() {
                 {/* Order type filter */}
                 <div className="w-full sm:w-52 flex-shrink-0">
                     <select
-                        className="w-full h-12 px-4 rounded-xl bg-white border border-gray-200 shadow-sm outline-none focus:ring-2 focus:ring-[#1B5E20] focus:border-[#1B5E20]"
+                        className="w-full h-12 px-4 rounded-xl bg-white border-2 border-gray-200 shadow-sm text-gray-800 font-bold text-sm outline-none focus:ring-2 focus:ring-[#1B5E20] focus:border-[#1B5E20] cursor-pointer hover:border-gray-300 transition"
                         value={filterType}
                         onChange={(e) => setFilterType(e.target.value as "all" | "standard" | "subscription")}
                     >
