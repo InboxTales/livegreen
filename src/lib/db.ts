@@ -121,10 +121,14 @@ export const db = {
         return newRow;
       });
 
-      if (sql.trim().toUpperCase().startsWith("SELECT") || sql.trim().toUpperCase().startsWith("SHOW")) {
+      if (
+        sql.trim().toUpperCase().startsWith("SELECT") || 
+        sql.trim().toUpperCase().startsWith("SHOW") ||
+        sql.toUpperCase().includes("RETURNING")
+      ) {
         return [rows, result.fields];
       } else {
-        // For INSERTs with RETURNING *, rows[0] may or may not have `id`.
+        // For INSERTs with auto-appended RETURNING *, rows[0] may or may not have `id`.
         // Safely extract it without crashing on tables like order_sequences.
         return [{ insertId: (rows[0] as any)?.id ?? null, affectedRows: result.rowCount }];
       }
@@ -212,7 +216,11 @@ export const db = {
           return newRow;
         });
 
-        if (sql.trim().toUpperCase().startsWith('SELECT') || sql.trim().toUpperCase().startsWith('SHOW')) {
+        if (
+          sql.trim().toUpperCase().startsWith('SELECT') || 
+          sql.trim().toUpperCase().startsWith('SHOW') ||
+          sql.toUpperCase().includes('RETURNING')
+        ) {
           return [rows, result.fields];
         } else {
           return [{ insertId: (rows[0] as any)?.id ?? null, affectedRows: result.rowCount }];

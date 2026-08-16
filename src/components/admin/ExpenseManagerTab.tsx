@@ -26,10 +26,12 @@ interface Expense {
   vendor?: string;
   bill_url?: string;
   notes?: string;
+  added_by?: string;
 }
 
 const EXPENSE_GROUPS = ["Inventory", "Logistics", "Marketing", "Technology", "Operations", "Salaries", "Rent & Utilities", "Other"];
 const PAYMENT_METHODS = ["Cash", "UPI", "Bank Transfer", "Credit Card", "Debit Card", "Cheque", "Other"];
+const EXPENSE_ADDED_BY = ["Ajay", "Venkatesh", "Venkat", "Sumanth"] as const;
 
 const GROUP_COLORS: Record<string, string> = {
   Inventory: "bg-amber-100 text-amber-800",
@@ -192,6 +194,7 @@ function ExpenseModal({
     category_id: initialCategoryId,
     amount: expense?.amount ?? "",
     payment_method: expense?.payment_method ?? PAYMENT_METHODS[0],
+    added_by: expense?.added_by ?? EXPENSE_ADDED_BY[0],
     description: expense?.description ?? "",
     vendor: expense?.vendor ?? "",
     notes: expense?.notes ?? "",
@@ -253,6 +256,33 @@ function ExpenseModal({
             </div>
           </div>
 
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Payment Method *</label>
+              <select
+                required
+                value={form.payment_method}
+                onChange={e => setForm(f => ({ ...f, payment_method: e.target.value }))}
+                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none bg-white"
+              >
+                {PAYMENT_METHODS.map(m => <option key={m} value={m}>{m}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Expense Added By *</label>
+              <select
+                required
+                value={form.added_by}
+                onChange={e => setForm(f => ({ ...f, added_by: e.target.value }))}
+                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none bg-white font-medium text-gray-900"
+              >
+                {EXPENSE_ADDED_BY.map(person => (
+                  <option key={person} value={person}>{person}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Category *</label>
             <select
@@ -277,18 +307,6 @@ function ExpenseModal({
                 <span className="text-[11px] text-gray-400 mt-0.5">auto-filled</span>
               </div>
             )}
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Payment Method *</label>
-            <select
-              required
-              value={form.payment_method}
-              onChange={e => setForm(f => ({ ...f, payment_method: e.target.value }))}
-              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none bg-white"
-            >
-              {PAYMENT_METHODS.map(m => <option key={m} value={m}>{m}</option>)}
-            </select>
           </div>
 
           <div>
@@ -519,6 +537,7 @@ function ExpensesSubTab({ categories }: { categories: ExpenseCategory[] }) {
   const filtered = expenses.filter(e => {
     const matchSearch = e.description.toLowerCase().includes(search.toLowerCase()) ||
       e.category_name?.toLowerCase().includes(search.toLowerCase()) ||
+      (e.added_by ?? "").toLowerCase().includes(search.toLowerCase()) ||
       (e.vendor ?? "").toLowerCase().includes(search.toLowerCase());
     const matchGroup = filterGroup === "All" || e.expense_group === filterGroup;
     const matchMonth = !filterMonth || e.expense_date.startsWith(filterMonth);
@@ -575,7 +594,7 @@ function ExpensesSubTab({ categories }: { categories: ExpenseCategory[] }) {
           <input
             value={search}
             onChange={e => setSearch(e.target.value)}
-            placeholder="Search expenses..."
+            placeholder="Search expenses, added by, vendor..."
             className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none"
           />
         </div>
@@ -621,6 +640,7 @@ function ExpensesSubTab({ categories }: { categories: ExpenseCategory[] }) {
                   <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Category</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide hidden sm:table-cell">Description</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide hidden md:table-cell">Payment</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide hidden lg:table-cell">Added By</th>
                   <th className="text-right px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Amount</th>
                   <th className="px-4 py-3" />
                 </tr>
@@ -643,6 +663,15 @@ function ExpensesSubTab({ categories }: { categories: ExpenseCategory[] }) {
                       {exp.vendor && <p className="text-gray-400 text-xs">{exp.vendor}</p>}
                     </td>
                     <td className="px-4 py-3 text-gray-500 hidden md:table-cell">{exp.payment_method}</td>
+                    <td className="px-4 py-3 hidden lg:table-cell">
+                      {exp.added_by ? (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-50 text-green-800 border border-green-200">
+                          {exp.added_by}
+                        </span>
+                      ) : (
+                        <span className="text-gray-400 text-xs">—</span>
+                      )}
+                    </td>
                     <td className="px-4 py-3 text-right font-bold text-gray-900 whitespace-nowrap">{fmt(exp.amount)}</td>
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-end gap-1">

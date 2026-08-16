@@ -659,17 +659,24 @@ export async function exportCustomers(from?: string, to?: string): Promise<void>
   const res = await fetch(`/api/customers/export?${params.toString()}`, {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   });
-  if (!res.ok) throw new Error('Export failed: ' + res.statusText);
-  const blob = await res.blob();
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
+  if (!res.ok) {
+    const errData = await res.json().catch(() => null);
+    throw new Error(errData?.error || res.statusText || 'Export failed');
+  }
+  // Read as text, then use data: URI so Chrome respects the filename
+  const csvText = await res.text();
   const tag = from && to ? `${from}_to_${to}` : 'all';
-  a.download = `customers_${tag}.csv`;
+  const filename = `customers_${tag}.csv`;
+  const dataUri = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csvText);
+  const a = document.createElement('a');
+  a.style.display = 'none';
+  a.href = dataUri;
+  a.download = filename;
   document.body.appendChild(a);
   a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  setTimeout(() => {
+    if (a.parentNode) a.parentNode.removeChild(a);
+  }, 500);
 }
 
 export async function trackOrdersByEmail(email: string): Promise<{ success: boolean; orders?: TrackedOrder[]; error?: string }> {

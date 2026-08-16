@@ -54,6 +54,19 @@ function presetDates(preset: DatePreset): { from: string | null; to: string | nu
     }
 }
 
+// ─── Sorting Options ────────────────────────────────────────────────────────────
+
+type SortOption = 'last_order_desc' | 'last_order_asc' | 'spent_desc' | 'spent_asc' | 'orders_desc' | 'orders_asc';
+
+const SORT_LABELS: Record<SortOption, string> = {
+    last_order_desc: 'Last Order: Newest → Oldest',
+    last_order_asc: 'Last Order: Oldest → Newest',
+    spent_desc: 'Lifetime Value: High → Low',
+    spent_asc: 'Lifetime Value: Low → High',
+    orders_desc: 'Orders: High → Low',
+    orders_asc: 'Orders: Low → High',
+};
+
 // ─── Component ──────────────────────────────────────────────────────────────────
 
 export function CustomersTab() {
@@ -66,6 +79,9 @@ export function CustomersTab() {
     const [customFrom, setCustomFrom] = useState("");
     const [customTo, setCustomTo] = useState("");
     const [showPresetMenu, setShowPresetMenu] = useState(false);
+
+    // Sorting
+    const [sortBy, setSortBy] = useState<SortOption>('last_order_desc');
 
     // Export modal
     const [showExportModal, setShowExportModal] = useState(false);
@@ -96,9 +112,9 @@ export function CustomersTab() {
         return presetDates(datePreset);
     }, [datePreset, customFrom, customTo]);
 
-    // Filtered customers
+    // Filtered & Sorted customers
     const filteredCustomers = useMemo(() => {
-        return customers.filter(c => {
+        const filtered = customers.filter(c => {
             // Search: name, email, phone/mobile
             const q = searchTerm.toLowerCase();
             const matchesSearch = !q ||
@@ -121,7 +137,33 @@ export function CustomersTab() {
 
             return matchesSearch && matchesDate;
         });
-    }, [customers, searchTerm, activeDateRange]);
+
+        // Apply sorting
+        return [...filtered].sort((a, b) => {
+            switch (sortBy) {
+                case 'last_order_desc': {
+                    const dateA = a.last_order_date ? new Date(a.last_order_date).getTime() : 0;
+                    const dateB = b.last_order_date ? new Date(b.last_order_date).getTime() : 0;
+                    return dateB - dateA;
+                }
+                case 'last_order_asc': {
+                    const dateA = a.last_order_date ? new Date(a.last_order_date).getTime() : Infinity;
+                    const dateB = b.last_order_date ? new Date(b.last_order_date).getTime() : Infinity;
+                    return dateA - dateB;
+                }
+                case 'spent_desc':
+                    return (Number(b.totalSpent) || 0) - (Number(a.totalSpent) || 0);
+                case 'spent_asc':
+                    return (Number(a.totalSpent) || 0) - (Number(b.totalSpent) || 0);
+                case 'orders_desc':
+                    return (Number(b.ordersCount) || 0) - (Number(a.ordersCount) || 0);
+                case 'orders_asc':
+                    return (Number(a.ordersCount) || 0) - (Number(b.ordersCount) || 0);
+                default:
+                    return 0;
+            }
+        });
+    }, [customers, searchTerm, activeDateRange, sortBy]);
 
     // Export handler
     const handleExport = async () => {
@@ -173,7 +215,7 @@ export function CustomersTab() {
                 </Button>
             </div>
 
-            {/* Search + Date filter row */}
+            {/* Search + Date filter + Sort row */}
             <div className="flex flex-col sm:flex-row gap-3 mb-8">
                 {/* Search */}
                 <div className="relative flex-1">
@@ -246,6 +288,19 @@ export function CustomersTab() {
                             </motion.div>
                         )}
                     </AnimatePresence>
+                </div>
+
+                {/* Sort Control */}
+                <div className="relative">
+                    <select
+                        value={sortBy}
+                        onChange={(e) => setSortBy(e.target.value as SortOption)}
+                        className="h-12 px-4 rounded-xl border border-gray-200 bg-white text-gray-700 text-sm font-semibold shadow-sm focus:ring-[#1B5E20] focus:border-[#1B5E20] outline-none cursor-pointer"
+                    >
+                        {(Object.entries(SORT_LABELS) as [SortOption, string][]).map(([val, label]) => (
+                            <option key={val} value={val}>{label}</option>
+                        ))}
+                    </select>
                 </div>
 
                 {/* Clear filter button */}

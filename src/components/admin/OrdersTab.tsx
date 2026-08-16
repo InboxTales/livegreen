@@ -186,11 +186,19 @@ function buildCSV(orders: Order[]): string {
 }
 
 function downloadCSV(csv: string, filename: string) {
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
+    const cleanFilename = filename.endsWith('.csv') ? filename : `${filename}.csv`;
+    // Use data: URI instead of blob URL — Chrome ignores the `download` attribute on blob URLs
+    // but reliably respects it on data: URIs, giving the file its correct name.
+    const dataUri = 'data:text/csv;charset=utf-8,' + encodeURIComponent('\uFEFF' + csv);
     const a = document.createElement('a');
-    a.href = url; a.download = filename; a.click();
-    URL.revokeObjectURL(url);
+    a.style.display = 'none';
+    a.href = dataUri;
+    a.download = cleanFilename;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => {
+        if (a.parentNode) a.parentNode.removeChild(a);
+    }, 500);
 }
 
 // ─── Main Component ────────────────────────────────────────────────────────────
@@ -199,6 +207,8 @@ export function OrdersTab() {
     const [orders, setOrders] = useState<Order[]>([]);
     const [searchTerm, setSearchTerm] = useState("");
     const [filterType, setFilterType] = useState<"all" | "standard" | "subscription">("all");
+    const [statusFilter, setStatusFilter] = useState<string>("all");
+    const [paymentFilter, setPaymentFilter] = useState<string>("all");
 
     // Date filter
     const [datePreset, setDatePreset] = useState<DatePreset>('all');
@@ -246,6 +256,7 @@ export function OrdersTab() {
 
     // Filtered orders for table — search covers order_number, id, name, email, phone
     const filteredOrders = useMemo(() => orders.filter(o => {
+        // 1. Search
         const q = searchTerm.toLowerCase();
         const matchesSearch = !q ||
             (o.id || '').toLowerCase().includes(q) ||
@@ -253,17 +264,37 @@ export function OrdersTab() {
             (o.provider_order_id || '').toLowerCase().includes(q) ||
             (o.customerName || '').toLowerCase().includes(q) ||
             (o.email || '').toLowerCase().includes(q) ||
-            (o.phone || '').includes(searchTerm); // phone: use original (no lowercase) for digit matching
+            (o.phone || '').includes(searchTerm); // phone: digit matching
+
+        // 2. Order Type
         const isSub = !!Number(o.is_subscription);
         const matchesType = filterType === "all" ? true : (filterType === "subscription" ? isSub : !isSub);
+
+        // 3. Status Filter
+        const matchesStatus = statusFilter === "all" ? true : o.status === statusFilter;
+
+        // 4. Payment Filter
+        let canonicalPayment = o.payment_status;
+        if (!canonicalPayment || canonicalPayment === 'pending') {
+            if (['paid', 'processing', 'shipped', 'out_for_delivery', 'delivered'].includes(o.status) || (o.paymentId && o.paymentId.trim() !== '')) {
+                canonicalPayment = 'captured';
+            } else if (o.status === 'failed') {
+                canonicalPayment = 'failed';
+            } else {
+                canonicalPayment = 'pending';
+            }
+        }
+        const matchesPayment = paymentFilter === "all" ? true : canonicalPayment === paymentFilter;
+
+        // 5. Date Filter
         let matchesDate = true;
         if (filterBounds.from || filterBounds.to) {
             const orderDate = new Date(o.date);
             if (filterBounds.from) matchesDate = matchesDate && orderDate >= filterBounds.from;
             if (filterBounds.to) matchesDate = matchesDate && orderDate <= filterBounds.to;
         }
-        return matchesSearch && matchesType && matchesDate;
-    }), [orders, searchTerm, filterType, filterBounds]);
+        return matchesSearch && matchesType && matchesStatus && matchesPayment && matchesDate;
+    }), [orders, searchTerm, filterType, statusFilter, paymentFilter, filterBounds]);
 
     // Export bounds — independent of table filter
     const exportBounds = useMemo<{ from: Date | null; to: Date | null }>(() => {
@@ -441,8 +472,42 @@ export function OrdersTab() {
                     </AnimatePresence>
                 </div>
 
+                {/* Payment filter */}
+                <div className="w-full sm:w-44 flex-shrink-0">
+                    <select
+                        className="w-full h-12 px-3 rounded-xl bg-white border-2 border-gray-200 shadow-sm text-gray-800 font-bold text-sm outline-none focus:ring-2 focus:ring-[#1B5E20] focus:border-[#1B5E20] cursor-pointer hover:border-gray-300 transition"
+                        value={paymentFilter}
+                        onChange={(e) => setPaymentFilter(e.target.value)}
+                    >
+                        <option value="all">All Payments</option>
+                        <option value="captured">Paid / Captured</option>
+                        <option value="pending">Pending</option>
+                        <option value="failed">Failed</option>
+                        <option value="refunded">Refunded</option>
+                    </select>
+                </div>
+
+                {/* Status filter */}
+                <div className="w-full sm:w-48 flex-shrink-0">
+                    <select
+                        className="w-full h-12 px-3 rounded-xl bg-white border-2 border-gray-200 shadow-sm text-gray-800 font-bold text-sm outline-none focus:ring-2 focus:ring-[#1B5E20] focus:border-[#1B5E20] cursor-pointer hover:border-gray-300 transition"
+                        value={statusFilter}
+                        onChange={(e) => setStatusFilter(e.target.value)}
+                    >
+                        <option value="all">All Statuses</option>
+                        <option value="pending">Created – Awaiting Payment</option>
+                        <option value="paid">Paid</option>
+                        <option value="processing">Processing</option>
+                        <option value="shipped">Shipped</option>
+                        <option value="out_for_delivery">Out for Delivery</option>
+                        <option value="delivered">Delivered</option>
+                        <option value="cancelled">Cancelled</option>
+                        <option value="failed">Failed</option>
+                    </select>
+                </div>
+
                 {/* Order type filter */}
-                <div className="w-full sm:w-52 flex-shrink-0">
+                <div className="w-full sm:w-44 flex-shrink-0">
                     <select
                         className="w-full h-12 px-4 rounded-xl bg-white border-2 border-gray-200 shadow-sm text-gray-800 font-bold text-sm outline-none focus:ring-2 focus:ring-[#1B5E20] focus:border-[#1B5E20] cursor-pointer hover:border-gray-300 transition"
                         value={filterType}
@@ -455,10 +520,10 @@ export function OrdersTab() {
                 </div>
 
                 {/* Active filter badge */}
-                {(datePreset !== 'all' || searchTerm || filterType !== 'all') && (
+                {(datePreset !== 'all' || searchTerm || filterType !== 'all' || statusFilter !== 'all' || paymentFilter !== 'all') && (
                     <div className="flex items-center gap-2 h-12 px-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-700 font-semibold flex-shrink-0">
                         <span>{filteredOrders.length} result{filteredOrders.length !== 1 ? 's' : ''}</span>
-                        <button onClick={() => { setDatePreset('all'); setCustomFrom(''); setCustomTo(''); setSearchTerm(''); setFilterType('all'); }} className="hover:text-amber-900" title="Clear all filters">
+                        <button onClick={() => { setDatePreset('all'); setCustomFrom(''); setCustomTo(''); setSearchTerm(''); setFilterType('all'); setStatusFilter('all'); setPaymentFilter('all'); }} className="hover:text-amber-900" title="Clear all filters">
                             <X className="w-3.5 h-3.5" />
                         </button>
                     </div>
@@ -509,7 +574,7 @@ export function OrdersTab() {
                                             <td className="px-6 py-4">
                                                 <div className="flex items-center gap-2">
                                                     <div className="font-bold text-gray-900">{order.customerName}</div>
-                                                    {order.is_subscription && <span className="text-[9px] font-black text-white bg-[#1B5E20] px-1.5 py-0.5 rounded uppercase">Sub</span>}
+                                                    {Boolean(Number(order.is_subscription)) && <span className="text-[9px] font-black text-white bg-[#1B5E20] px-1.5 py-0.5 rounded uppercase">Sub</span>}
                                                 </div>
                                                 <div className="text-gray-500 text-xs">{order.email}</div>
                                             </td>
@@ -633,9 +698,9 @@ export function OrdersTab() {
                                                                                 <div className="flex-1">
                                                                                     <div className="flex items-center gap-2">
                                                                                         <p className="font-medium text-gray-900 text-sm line-clamp-1">{item.name}</p>
-                                                                                        {item.isSubscription && <span className="text-[9px] font-black text-[#1B5E20] border border-[#1B5E20]/20 bg-[#1B5E20]/5 px-1 rounded uppercase">Sub</span>}
+                                                                                        {Boolean(item.isSubscription) && <span className="text-[9px] font-black text-[#1B5E20] border border-[#1B5E20]/20 bg-[#1B5E20]/5 px-1 rounded uppercase">Sub</span>}
                                                                                     </div>
-                                                                                    <p className="text-gray-500 text-xs">Qty: {item.quantity} x &#8377;{item.price} {item.isSubscription && `• ${item.frequency}`}</p>
+                                                                                    <p className="text-gray-500 text-xs">Qty: {item.quantity} x &#8377;{item.price} {Boolean(item.isSubscription) && `• ${item.frequency}`}</p>
                                                                                 </div>
                                                                                 <p className="font-bold text-gray-900 text-sm">&#8377;{item.price * item.quantity}</p>
                                                                             </div>

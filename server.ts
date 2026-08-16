@@ -96,7 +96,7 @@ async function generateSequentialOrderNumber(
     "UPDATE order_sequences SET next_val = next_val + 1 WHERE seq_type = ? RETURNING next_val",
     [type]
   );
-  const nextVal: number = rows[0]?.next_val;
+  const nextVal: number = rows?.[0]?.next_val ?? rows?.[0]?.nextVal ?? (Array.isArray(rows) ? (rows[0] as any)?.next_val : (rows as any)?.next_val);
   if (!nextVal) throw new Error(`Failed to generate order sequence for type ${type}`);
   return `${type}${nextVal}`;
 }
@@ -848,6 +848,14 @@ async function initDB() {
   const videoColumnNames = videoColumnRows.map((c: any) => c.column_name.toLowerCase());
   if (!videoColumnNames.includes('created_at')) {
     await pool.query("ALTER TABLE video_testimonials ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP");
+  }
+
+  // Ensure expenses table has added_by column
+  const [expenseColRows]: any = await pool.query("SELECT column_name FROM information_schema.columns WHERE table_name = 'expenses'");
+  const expenseColNames = expenseColRows.map((c: any) => c.column_name.toLowerCase());
+  if (!expenseColNames.includes('added_by')) {
+    console.log("Adding missing column added_by to expenses table...");
+    await pool.query("ALTER TABLE expenses ADD COLUMN added_by VARCHAR(100) DEFAULT NULL");
   }
 
   // Update DB records for video testimonials if they exist with old names
@@ -1969,17 +1977,27 @@ async function startServer() {
     try {
       const [customers]: any = await pool.query(`
         SELECT
-          c.*,
-          MAX(o.date) AS last_order_date,
-          MAX(o.order_number) FILTER (WHERE o.date = (
-            SELECT MAX(o2.date) FROM orders o2 WHERE o2.email = c.email
-          )) AS last_order_number,
-          MAX(o.totalAmount) FILTER (WHERE o.date = (
-            SELECT MAX(o2.date) FROM orders o2 WHERE o2.email = c.email
-          )) AS last_order_amount
+          c.id,
+          c.name,
+          c.email,
+          c.phone,
+          c.totalSpent,
+          c.ordersCount,
+          c.joinDate,
+          sub.last_order_date,
+          sub.last_order_number,
+          sub.last_order_amount
         FROM customers c
-        LEFT JOIN orders o ON LOWER(o.email) = LOWER(c.email)
-        GROUP BY c.id
+        LEFT JOIN LATERAL (
+          SELECT
+            o.date AS last_order_date,
+            COALESCE(o.order_number, o.id) AS last_order_number,
+            o.totalAmount AS last_order_amount
+          FROM orders o
+          WHERE LOWER(o.email) = LOWER(c.email)
+          ORDER BY o.date DESC
+          LIMIT 1
+        ) sub ON true
         ORDER BY c.totalSpent DESC
       `);
       const normalized = (customers as any[]).map((c: any) => ({
@@ -1993,7 +2011,6 @@ async function startServer() {
       }));
       res.json(normalized);
     } catch (e: any) {
-      // Fallback: if the FILTER syntax isn't supported (older Postgres), return without aggregation
       console.warn('[Customers] Aggregation query failed, falling back to simple query:', e.message);
       const [customers]: any = await pool.query("SELECT * FROM customers ORDER BY totalSpent DESC");
       const normalized = (customers as any[]).map((c: any) => ({
@@ -2010,39 +2027,32 @@ async function startServer() {
   app.get("/api/customers/export", verifyAdmin, async (req, res) => {
     const { from, to } = req.query as { from?: string; to?: string };
     try {
-      // Build a query that includes last_order_date for each customer
       let query = `
         SELECT
-          c.name, c.email, c.phone, c.ordersCount, c.totalSpent,
-          MAX(o.date) AS last_order_date,
-          STRING_AGG(DISTINCT o.order_number, ', ' ORDER BY o.date DESC) AS all_order_numbers
+          c.name,
+          c.email,
+          c.phone,
+          c.ordersCount,
+          c.totalSpent,
+          sub.last_order_date,
+          sub.last_order_number,
+          sub.last_order_amount
         FROM customers c
-        LEFT JOIN orders o ON LOWER(o.email) = LOWER(c.email)
-        GROUP BY c.id, c.name, c.email, c.phone, c.ordersCount, c.totalSpent
+        LEFT JOIN LATERAL (
+          SELECT
+            o.date AS last_order_date,
+            COALESCE(o.order_number, o.id) AS last_order_number,
+            o.totalAmount AS last_order_amount
+          FROM orders o
+          WHERE LOWER(o.email) = LOWER(c.email)
+          ORDER BY o.date DESC
+          LIMIT 1
+        ) sub ON true
       `;
       const params: any[] = [];
 
       if (from && to) {
-        // Filter: MAX(order.date) must fall within the range
-        query = `
-          SELECT sub.* FROM (
-            SELECT
-              c.name, c.email, c.phone, c.ordersCount, c.totalSpent,
-              MAX(o.date) AS last_order_date,
-              (
-                SELECT o2.order_number FROM orders o2
-                WHERE LOWER(o2.email) = LOWER(c.email)
-                ORDER BY o2.date DESC LIMIT 1
-              ) AS last_order_number,
-              (
-                SELECT o3.totalAmount FROM orders o3
-                WHERE LOWER(o3.email) = LOWER(c.email)
-                ORDER BY o3.date DESC LIMIT 1
-              ) AS last_order_amount
-            FROM customers c
-            LEFT JOIN orders o ON LOWER(o.email) = LOWER(c.email)
-            GROUP BY c.id, c.name, c.email, c.phone, c.ordersCount, c.totalSpent
-          ) sub
+        query += `
           WHERE sub.last_order_date IS NOT NULL
             AND SUBSTRING(sub.last_order_date, 1, 10) >= ?
             AND SUBSTRING(sub.last_order_date, 1, 10) <= ?
@@ -2050,13 +2060,13 @@ async function startServer() {
         `;
         params.push(from, to);
       } else {
-        query += ' ORDER BY last_order_date DESC NULLS LAST';
+        query += ' ORDER BY sub.last_order_date DESC NULLS LAST';
       }
 
       const [rows]: any = await pool.query(query, params);
 
       const headers = ['Customer Name', 'Email', 'Mobile Number', 'Last Order Number', 'Last Order Date', 'Last Order Amount', 'Total Orders', 'Total Order Value (₹)'];
-      const csvRows = rows.map((r: any) => [
+      const csvRows = (rows || []).map((r: any) => [
         `"${(r.name || '').replace(/"/g, '""')}"`,
         `"${(r.email || '').replace(/"/g, '""')}"`,
         `"${(r.phone || '').replace(/"/g, '""')}"`,
@@ -2117,6 +2127,8 @@ async function startServer() {
   });
 
   // ═══════════════ EXPENSES ═══════════════
+  const ALLOWED_EXPENSE_ADDED_BY = ['Ajay', 'Venkatesh', 'Venkat', 'Sumanth'] as const;
+
   app.get("/api/expenses", verifyAdmin, async (req, res) => {
     const [rows]: any = await pool.query(`
       SELECT e.*, ec.name as category_name, ec.expense_group, ec.expense_type
@@ -2128,12 +2140,17 @@ async function startServer() {
   });
 
   app.post("/api/expenses", verifyAdmin, async (req, res) => {
-    const { expense_date, category_id, amount, payment_method, description, vendor, bill_url, notes } = req.body;
-    if (!expense_date || !category_id || !amount || !payment_method || !description)
-      return res.status(400).json({ error: "expense_date, category_id, amount, payment_method, description are required" });
+    const { expense_date, category_id, amount, payment_method, description, vendor, bill_url, notes, added_by } = req.body;
+    if (!expense_date || !category_id || !amount || !payment_method || !description || !added_by)
+      return res.status(400).json({ error: "expense_date, category_id, amount, payment_method, description, and added_by are required" });
+
+    if (!ALLOWED_EXPENSE_ADDED_BY.includes(added_by)) {
+      return res.status(400).json({ error: `Invalid added_by. Allowed values: ${ALLOWED_EXPENSE_ADDED_BY.join(', ')}` });
+    }
+
     const [result]: any = await pool.query(
-      "INSERT INTO expenses (expense_date, category_id, amount, payment_method, description, vendor, bill_url, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
-      [expense_date, category_id, amount, payment_method, description, vendor || null, bill_url || null, notes || null]
+      "INSERT INTO expenses (expense_date, category_id, amount, payment_method, description, vendor, bill_url, notes, added_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
+      [expense_date, category_id, amount, payment_method, description, vendor || null, bill_url || null, notes || null, added_by]
     );
     const newId = result[0]?.id ?? result.insertId;
     const [rows]: any = await pool.query(`
@@ -2144,10 +2161,15 @@ async function startServer() {
 
   app.put("/api/expenses/:id", verifyAdmin, async (req, res) => {
     const { id } = req.params;
-    const { expense_date, category_id, amount, payment_method, description, vendor, bill_url, notes } = req.body;
+    const { expense_date, category_id, amount, payment_method, description, vendor, bill_url, notes, added_by } = req.body;
+
+    if (added_by && !ALLOWED_EXPENSE_ADDED_BY.includes(added_by)) {
+      return res.status(400).json({ error: `Invalid added_by. Allowed values: ${ALLOWED_EXPENSE_ADDED_BY.join(', ')}` });
+    }
+
     await pool.query(
-      "UPDATE expenses SET expense_date=?, category_id=?, amount=?, payment_method=?, description=?, vendor=?, bill_url=?, notes=? WHERE id=?",
-      [expense_date, category_id, amount, payment_method, description, vendor || null, bill_url || null, notes || null, id]
+      "UPDATE expenses SET expense_date=?, category_id=?, amount=?, payment_method=?, description=?, vendor=?, bill_url=?, notes=?, added_by=COALESCE(?, added_by) WHERE id=?",
+      [expense_date, category_id, amount, payment_method, description, vendor || null, bill_url || null, notes || null, added_by || null, id]
     );
     const [rows]: any = await pool.query(`
       SELECT e.*, ec.name as category_name, ec.expense_group, ec.expense_type
