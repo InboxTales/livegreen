@@ -501,11 +501,11 @@ export async function checkPincode(pincode: string) {
   });
 }
 
-export async function updateOrderStatus(id: string, status: string) {
+export async function updateOrderStatus(id: string, status: string, payment_status?: string) {
   return fetchAuth(`/api/orders/${id}/status`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ status })
+    body: JSON.stringify({ status, payment_status })
   });
 }
 

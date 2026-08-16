@@ -7,12 +7,14 @@ import { motion, AnimatePresence } from "motion/react";
 
 // ─── Date preset types ──────────────────────────────────────────────────────────
 
-type DatePreset = 'all' | 'today' | 'yesterday' | 'last7' | 'last30' | 'custom';
+type DatePreset = 'all' | 'today' | 'yesterday' | 'this_month' | 'last_month' | 'last7' | 'last30' | 'custom';
 
 const PRESET_LABELS: Record<DatePreset, string> = {
     all: 'All Dates',
     today: 'Today',
     yesterday: 'Yesterday',
+    this_month: 'This Month',
+    last_month: 'Last Month',
     last7: 'Last 7 Days',
     last30: 'Last 30 Days',
     custom: 'Custom Range',
@@ -30,6 +32,15 @@ function presetDates(preset: DatePreset): { from: string | null; to: string | nu
         case 'yesterday': {
             const y = new Date(now); y.setDate(now.getDate() - 1);
             return { from: toDateStr(y), to: toDateStr(y) };
+        }
+        case 'this_month': {
+            const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+            return { from: toDateStr(firstDay), to: toDateStr(now) };
+        }
+        case 'last_month': {
+            const firstDay = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+            const lastDay = new Date(now.getFullYear(), now.getMonth(), 0);
+            return { from: toDateStr(firstDay), to: toDateStr(lastDay) };
         }
         case 'last7': {
             const f = new Date(now); f.setDate(now.getDate() - 6);

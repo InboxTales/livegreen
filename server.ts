@@ -783,6 +783,26 @@ async function initDB() {
     "UPDATE orders SET provider_order_id = id WHERE provider_order_id IS NULL AND id LIKE 'order_%'"
   );
 
+  // Backfill payment_status for historical orders based on known payment signals:
+  // 1. If status is 'paid', 'processing', 'shipped', 'out_for_delivery', 'delivered' -> payment_status = 'captured'
+  // 2. If paymentId is present and non-empty -> payment_status = 'captured'
+  // 3. If status is 'failed' -> payment_status = 'failed'
+  try {
+    await pool.query(`
+      UPDATE orders 
+      SET payment_status = 'captured' 
+      WHERE (status IN ('paid', 'processing', 'shipped', 'out_for_delivery', 'delivered') OR (paymentId IS NOT NULL AND paymentId != '')) 
+        AND (payment_status IS NULL OR payment_status = 'pending')
+    `);
+    await pool.query(`
+      UPDATE orders 
+      SET payment_status = 'failed' 
+      WHERE status = 'failed' AND (payment_status IS NULL OR payment_status = 'pending')
+    `);
+  } catch (e: any) {
+    console.warn('[DB] Could not backfill payment_status:', e.message);
+  }
+
   // Create order_sequences table for collision-safe sequential order numbers.
   // Atomic UPDATE RETURNING ensures no two concurrent requests get the same number.
   await pool.query(`
@@ -1685,9 +1705,22 @@ async function startServer() {
   });
 
   app.put("/api/orders/:id/status", verifyAdmin, async (req, res) => {
-    const { status } = req.body;
+    const { status, payment_status } = req.body;
     try {
-      await pool.query("UPDATE orders SET status = ? WHERE id = ?", [status, req.params.id]);
+      let resolvedPaymentStatus = payment_status;
+      if (!resolvedPaymentStatus) {
+        if (['paid', 'processing', 'shipped', 'out_for_delivery', 'delivered'].includes(status)) {
+          resolvedPaymentStatus = 'captured';
+        } else if (status === 'failed') {
+          resolvedPaymentStatus = 'failed';
+        }
+      }
+
+      if (resolvedPaymentStatus) {
+        await pool.query("UPDATE orders SET status = ?, payment_status = ? WHERE id = ?", [status, resolvedPaymentStatus, req.params.id]);
+      } else {
+        await pool.query("UPDATE orders SET status = ? WHERE id = ?", [status, req.params.id]);
+      }
       res.json({ success: true });
     } catch (e) { res.status(500).json({ error: 'Update failed' }); }
   });

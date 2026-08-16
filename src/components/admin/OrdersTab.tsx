@@ -36,12 +36,14 @@ function statusClass(s: string) {
 
 // ─── Date-range helpers ────────────────────────────────────────────────────────
 
-type DatePreset = 'all' | 'today' | 'yesterday' | 'last7' | 'last30' | 'custom';
+type DatePreset = 'all' | 'today' | 'yesterday' | 'this_month' | 'last_month' | 'last7' | 'last30' | 'custom';
 
 const PRESET_LABELS: Record<DatePreset, string> = {
     all: 'All Dates',
     today: 'Today',
     yesterday: 'Yesterday',
+    this_month: 'This Month',
+    last_month: 'Last Month',
     last7: 'Last 7 Days',
     last30: 'Last 30 Days',
     custom: 'Custom Range',
@@ -54,6 +56,15 @@ function presetRange(preset: DatePreset): { from: Date | null; to: Date | null }
     switch (preset) {
         case 'today': return { from: startOfDay(now), to: endOfDay(now) };
         case 'yesterday': { const y = new Date(now); y.setDate(now.getDate() - 1); return { from: startOfDay(y), to: endOfDay(y) }; }
+        case 'this_month': {
+            const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+            return { from: startOfDay(firstDay), to: endOfDay(now) };
+        }
+        case 'last_month': {
+            const firstDay = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+            const lastDay = new Date(now.getFullYear(), now.getMonth(), 0);
+            return { from: startOfDay(firstDay), to: endOfDay(lastDay) };
+        }
         case 'last7': { const f = new Date(now); f.setDate(now.getDate() - 6); return { from: startOfDay(f), to: endOfDay(now) }; }
         case 'last30': { const f = new Date(now); f.setDate(now.getDate() - 29); return { from: startOfDay(f), to: endOfDay(now) }; }
         default: return { from: null, to: null };
@@ -81,21 +92,96 @@ function displayOrderId(order: Order): string {
 // ─── CSV export ────────────────────────────────────────────────────────────────
 
 function buildCSV(orders: Order[]): string {
-    const headers = ['Order Number', 'Provider Order ID', 'Customer Name', 'Customer Email', 'Phone', 'Order Date', 'Amount (INR)', 'Payment Method', 'Order Status', 'Payment Status', 'Items'];
+    const headers = [
+        'Order Number',
+        'Provider Order ID',
+        'Customer Name',
+        'Customer Email',
+        'Phone',
+        'Order Date',
+        'Item Name',
+        'Quantity',
+        'Item Unit Price (INR)',
+        'Item Total (INR)',
+        'Order Total Amount (INR)',
+        'Payment Method',
+        'Payment Status',
+        'Order Status',
+        'AWB Number',
+        'Courier Name'
+    ];
     const escape = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`;
-    const rows = orders.map(o => [
-        o.order_number || o.id,
-        o.id,
-        o.customerName || '',
-        o.email || '',
-        o.phone || '',
-        stableDate(new Date(o.date)),
-        o.totalAmount,
-        o.paymentMethod || '',
-        STATUS_LABELS[o.status] || o.status,
-        o.payment_status || '',
-        o.items.map((it: any) => `${it.name} x${it.quantity}`).join(' | '),
-    ]);
+    const rows: (string | number)[][] = [];
+
+    for (const o of orders) {
+        const items = Array.isArray(o.items) ? o.items : [];
+        const orderNum = o.order_number || o.id;
+        const providerId = o.provider_order_id || (o.id.startsWith('order_') ? o.id : '');
+        const dateStr = stableDate(new Date(o.date));
+        const orderStatus = STATUS_LABELS[o.status] || o.status;
+
+        // Canonical payment status resolution
+        let paymentStatus = o.payment_status;
+        if (!paymentStatus || paymentStatus === 'pending') {
+            if (['paid', 'processing', 'shipped', 'out_for_delivery', 'delivered'].includes(o.status) || (o.paymentId && o.paymentId.trim() !== '')) {
+                paymentStatus = 'captured';
+            } else if (o.status === 'failed') {
+                paymentStatus = 'failed';
+            } else {
+                paymentStatus = 'pending';
+            }
+        }
+
+        const awb = o.icarry_awb || '';
+        const courier = o.icarry_status || '';
+
+        if (items.length === 0) {
+            rows.push([
+                orderNum,
+                providerId,
+                o.customerName || '',
+                o.email || '',
+                o.phone || '',
+                dateStr,
+                '—',
+                0,
+                0,
+                0,
+                o.totalAmount,
+                o.paymentMethod || '',
+                paymentStatus,
+                orderStatus,
+                awb,
+                courier,
+            ]);
+        } else {
+            for (const it of items) {
+                const qty = Number(it.quantity) || 1;
+                const price = Number(it.price) || 0;
+                const lineTotal = price * qty;
+
+                rows.push([
+                    orderNum,
+                    providerId,
+                    o.customerName || '',
+                    o.email || '',
+                    o.phone || '',
+                    dateStr,
+                    it.name || 'Product',
+                    qty,
+                    price,
+                    lineTotal,
+                    o.totalAmount,
+                    o.paymentMethod || '',
+                    paymentStatus,
+                    orderStatus,
+                    awb,
+                    courier,
+                ]);
+            }
+        }
+    }
+
     return [headers, ...rows].map(r => r.map(escape).join(',')).join('\n');
 }
 
@@ -199,7 +285,8 @@ export function OrdersTab() {
     // Handlers
     const handleUpdateStatus = async (id: string, currentStatus: string, newStatus: string) => {
         if (currentStatus === newStatus) return;
-        await updateOrderStatus(id, newStatus);
+        const newPaymentStatus = ['paid', 'processing', 'shipped', 'out_for_delivery', 'delivered'].includes(newStatus) ? 'captured' : (newStatus === 'failed' ? 'failed' : undefined);
+        await updateOrderStatus(id, newStatus, newPaymentStatus);
         loadOrders();
     };
 
@@ -648,7 +735,7 @@ export function OrdersTab() {
 
                     {/* Quick presets */}
                     <div className="flex flex-wrap gap-2 mb-5">
-                        {(['all', 'today', 'yesterday', 'last7', 'last30', 'custom'] as DatePreset[]).map(p => (
+                        {(['all', 'today', 'yesterday', 'this_month', 'last_month', 'last7', 'last30', 'custom'] as DatePreset[]).map(p => (
                             <button key={p} onClick={() => { setExportPreset(p); if (p !== 'custom') { setExportCustomFrom(''); setExportCustomTo(''); } }}
                                 className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition ${exportPreset === p ? 'bg-[#1B5E20] text-white border-[#1B5E20]' : 'bg-white text-gray-600 border-gray-200 hover:border-[#1B5E20]'}`}>
                                 {PRESET_LABELS[p]}
